@@ -21,8 +21,7 @@ function App() {
   const [filenameOverride, setFilenameOverride] = useState('');
   const [currentJob, setCurrentJob] = useState<DownloadJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+  const [configError, setConfigError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConfig();
@@ -40,28 +39,29 @@ function App() {
 
   const fetchConfig = async () => {
     try {
-      const response = await fetch(`${apiUrl}/config`, {
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-      });
-      const data = await response.json();
+      const response = await fetch('/api/config');
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      const data: Config = await response.json();
       setConfig(data);
+      setConfigError(null);
       if (data.folders.length > 0) {
         setFolderKey(data.folders[0]);
       }
     } catch (error) {
       console.error('Failed to fetch config:', error);
+      setConfigError('Could not load configuration. Is the server running?');
     }
   };
 
   const pollStatus = async (jobId: string) => {
     try {
-      const response = await fetch(`${apiUrl}/status/${jobId}`, {
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-      });
+      const response = await fetch(`/api/status/${jobId}`);
+      if (!response.ok) {
+        console.error('Status poll returned non-OK response:', response.status);
+        return;
+      }
       const data = await response.json();
       setCurrentJob(data);
     } catch (error) {
@@ -74,10 +74,9 @@ function App() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${apiUrl}/download`, {
+      const response = await fetch('/api/download', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -154,6 +153,12 @@ function App() {
             <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
           </div>
 
+          {configError && (
+            <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {configError}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="url" className="block text-sm font-medium text-slate-700 mb-2">
@@ -174,19 +179,25 @@ function App() {
               <label htmlFor="folder" className="block text-sm font-medium text-slate-700 mb-2">
                 Destination Folder
               </label>
-              <select
-                id="folder"
-                value={folderKey}
-                onChange={(e) => setFolderKey(e.target.value)}
-                required
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition bg-white"
-              >
-                {config.folders.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder}
-                  </option>
-                ))}
-              </select>
+              {config.folders.length === 0 ? (
+                <p className="text-sm text-slate-500 italic">
+                  No folders configured. Set <code className="bg-slate-100 px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-slate-100 px-1 rounded">.env</code> file.
+                </p>
+              ) : (
+                <select
+                  id="folder"
+                  value={folderKey}
+                  onChange={(e) => setFolderKey(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition bg-white"
+                >
+                  {config.folders.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
