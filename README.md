@@ -6,6 +6,60 @@ A self-hosted web UI for downloading files from URLs to folders on your machine.
 - **Backend** — Express (TypeScript), runs on Node.js
 - **Admin page** — `/admin` (hash route `#/admin`) — live job list with status filter
 
+**Published image:** `ghcr.io/<your-github-username>/web-downloader:latest`
+_(replace `<your-github-username>` with your actual GitHub username / org)_
+
+---
+
+## Using the Pre-built Image (Recommended for home-automation)
+
+No need to clone this repo or build anything. Pull the image directly:
+
+```bash
+docker pull ghcr.io/<your-github-username>/web-downloader:latest
+```
+
+Or reference it in another project's `docker-compose.yml`:
+
+```yaml
+services:
+  web-downloader:
+    image: ghcr.io/<your-github-username>/web-downloader:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DOWNLOAD_FOLDERS: "images:/downloads/images;videos:/downloads/videos"
+      ALLOWED_EXTENSIONS: ".jpg,.png,.gif,.zip,.mp4,.pdf"
+    volumes:
+      - /mnt/nas/images:/downloads/images
+      - /mnt/nas/videos:/downloads/videos
+      - ./logs/web-downloader:/app/logs
+```
+
+To update to the latest version:
+
+```bash
+docker compose pull web-downloader && docker compose up -d web-downloader
+```
+
+---
+
+## CI/CD — Automatic Image Publishing
+
+The workflow at [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) runs on every push to `main` and on version tags (`v*.*.*`).
+
+It publishes the following tags to GHCR:
+
+| Tag | When |
+|-----|------|
+| `latest` | Every push to `main` |
+| `v1.2.3` | On a `v1.2.3` git tag |
+| `v1.2` | On a `v1.2.x` git tag |
+| `sha-abc1234` | Every build (short commit SHA) |
+
+No secrets need to be configured — the workflow uses the built-in `GITHUB_TOKEN`.
+
 ---
 
 ## Quick Start (Development)
