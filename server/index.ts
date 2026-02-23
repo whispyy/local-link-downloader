@@ -265,6 +265,26 @@ app.post('/api/download', async (req, res) => {
   res.json({ id: jobId, status: 'queued' });
 });
 
+// GET /api/jobs - list all jobs sorted by createdAt descending
+app.get('/api/jobs', (_req, res) => {
+  const allJobs = Array.from(jobs.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  res.json(
+    allJobs.map((job) => ({
+      id: job.id,
+      url: job.url,
+      status: job.status,
+      message: job.message,
+      filename: job.filename,
+      folder_key: job.folderKey,
+      created_at: job.createdAt,
+      updated_at: job.updatedAt,
+    }))
+  );
+});
+
 // GET /api/status/:jobId - get job status
 app.get('/api/status/:jobId', (req, res) => {
   const { jobId } = req.params;
@@ -285,6 +305,17 @@ app.get('/api/status/:jobId', (req, res) => {
     updated_at: job.updatedAt,
   });
 });
+
+// Serve built frontend static files in production
+const STATIC_DIR = process.env.STATIC_DIR || '';
+if (STATIC_DIR && existsSync(STATIC_DIR)) {
+  app.use(express.static(STATIC_DIR));
+  // SPA fallback: serve index.html for any non-API route
+  app.get('*', (_req, res) => {
+    res.sendFile(path.resolve(STATIC_DIR, 'index.html'));
+  });
+  log('INFO', `Serving static files from ${path.resolve(STATIC_DIR)}`);
+}
 
 app.listen(PORT, () => {
   log('INFO', `Web Downloader API server running on port ${PORT}`);

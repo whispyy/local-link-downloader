@@ -1,0 +1,24 @@
+services:
+  local-link-downloader:
+    build: .
+    container_name: local-link-downloader
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      API_PORT: "3000"
+      STATIC_DIR: "/app/public"
+      LOG_DIR: "/app/logs"
+      # Map folder keys to paths INSIDE the container.
+      # The actual host paths are bound via the volumes section below.
+      DOWNLOAD_FOLDERS: "images:/downloads/images;videos:/downloads/videos;tmp:/downloads/tmp"
+      ALLOWED_EXTENSIONS: ".jpg,.png,.gif,.zip,.mp4,.pdf,.mkv,.avi,.mov,.mp3,.wav,.flac,.mp4a,.aac,.ogg,.divx,.webm,.mpeg,.mpg"
+    volumes:
+      # ── Download destinations ──────────────────────────────────────────────
+      # Format: /host/absolute/path:/container/path
+      # These must match the container-side paths used in DOWNLOAD_FOLDERS above.
+      - /mnt/images:/downloads/images
+      - /mnt/videos:/downloads/videos
+      - /mnt/tmp:/downloads/tmp
+      # ── Persistent logs ───────────────────────────────────────────────────
+      - ./logs:/app/logs

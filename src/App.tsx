@@ -148,9 +148,17 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <Download className="w-8 h-8 text-slate-700" />
-            <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Download className="w-8 h-8 text-slate-700" />
+              <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
+            </div>
+            <a
+              href="#/admin"
+              className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2"
+            >
+              Admin
+            </a>
           </div>
 
           {configError && (
