@@ -26,6 +26,10 @@ COPY server/ ./server/
 # Compile TypeScript server to JavaScript
 RUN npx tsc --project tsconfig.server.build.json
 
+# Copy server/package.json into dist/server/ so Node.js treats the
+# compiled output as CommonJS (overrides the root "type": "module")
+RUN cp server/package.json dist/server/package.json
+
 # ─── Stage 3: Production image ────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
@@ -35,7 +39,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy compiled server
+# Copy compiled server (includes server/package.json with "type": "commonjs")
 COPY --from=server-builder /app/dist/server ./dist/server
 
 # Copy built frontend
