@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud } from 'lucide-react';
 
 interface Config {
   folders: string[];
@@ -20,19 +20,29 @@ interface AppProps {
   authEnabled: boolean;
 }
 
+type Mode = 'url' | 'upload';
+
 function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [config, setConfig] = useState<Config>({ folders: [], allowedExtensions: [] });
+  const [mode, setMode] = useState<Mode>('url');
+
+  // URL mode state
   const [url, setUrl] = useState('');
-  const [folderKey, setFolderKey] = useState('');
   const [filenameOverride, setFilenameOverride] = useState('');
+
+  // Upload mode state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadFilenameOverride, setUploadFilenameOverride] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Shared state
+  const [folderKey, setFolderKey] = useState('');
   const [currentJob, setCurrentJob] = useState<DownloadJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  const authHeaders = useMemo(
-  () => ({ Authorization: `Bearer ${token}` }),
-  [token]
-);
+  const authHeaders = { Authorization: `Bearer ${token}` };
 
   useEffect(() => {
     fetchConfig();
@@ -40,10 +50,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
   useEffect(() => {
     if (currentJob && (currentJob.status === 'queued' || currentJob.status === 'downloading')) {
-      const interval = setInterval(() => {
-        pollStatus(currentJob.id);
-      }, 1000);
-
+      const interval = setInterval(() => pollStatus(currentJob.id), 1000);
       return () => clearInterval(interval);
     }
   }, [currentJob]);
@@ -52,15 +59,11 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     try {
       const response = await fetch('/api/config', { headers: authHeaders });
       if (response.status === 401) { onUnauthorized(); return; }
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
       const data: Config = await response.json();
       setConfig(data);
       setConfigError(null);
-      if (data.folders.length > 0) {
-        setFolderKey(data.folders[0]);
-      }
+      if (data.folders.length > 0) setFolderKey(data.folders[0]);
     } catch (error) {
       console.error('Failed to fetch config:', error);
       setConfigError('Could not load configuration. Is the server running?');
@@ -71,10 +74,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     try {
       const response = await fetch(`/api/status/${jobId}`, { headers: authHeaders });
       if (response.status === 401) { onUnauthorized(); return; }
-      if (!response.ok) {
-        console.error('Status poll returned non-OK response:', response.status);
-        return;
-      }
+      if (!response.ok) return;
       const data = await response.json();
       setCurrentJob(data);
     } catch (error) {
@@ -82,75 +82,93 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // ── URL submit ──────────────────────────────────────────────────────────────
+  const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
     try {
       const response = await fetch('/api/download', {
         method: 'POST',
-        headers: {
-          ...authHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          folderKey,
-          filenameOverride: filenameOverride || undefined,
-        }),
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, folderKey, filenameOverride: filenameOverride || undefined }),
       });
-
       if (response.status === 401) { onUnauthorized(); return; }
-
       const data = await response.json();
-
-      if (!response.ok) {
-        setCurrentJob({
-          id: 'error',
-          status: 'error',
-          message: data.error || 'Failed to start download',
-        });
-      } else {
-        setCurrentJob(data);
-      }
+      setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start download' });
     } catch (error) {
-      setCurrentJob({
-        id: 'error',
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Network error',
-      });
+      setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ── Upload submit ───────────────────────────────────────────────────────────
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('folderKey', folderKey);
+      if (uploadFilenameOverride) formData.append('filenameOverride', uploadFilenameOverride);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: authHeaders, // no Content-Type — browser sets multipart boundary
+        body: formData,
+      });
+      if (response.status === 401) { onUnauthorized(); return; }
+      const data = await response.json();
+      setCurrentJob(response.ok ? { ...data, status: 'done' } : { id: 'error', status: 'error', message: data.error || 'Upload failed' });
+    } catch (error) {
+      setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Drag-and-drop handlers ──────────────────────────────────────────────────
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) setSelectedFile(file);
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setSelectedFile(file);
+  };
+
+  // ── Status helpers ──────────────────────────────────────────────────────────
   const getStatusIcon = () => {
     if (!currentJob) return null;
-
     switch (currentJob.status) {
-      case 'queued':
-        return <Clock className="w-5 h-5 text-blue-500" />;
-      case 'downloading':
-        return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
-      case 'done':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'error':
-        return <XCircle className="w-5 h-5 text-red-500" />;
+      case 'queued':      return <Clock className="w-5 h-5 text-blue-500" />;
+      case 'downloading': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
+      case 'done':        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'error':       return <XCircle className="w-5 h-5 text-red-500" />;
     }
   };
 
   const getStatusText = () => {
     if (!currentJob) return null;
-
     switch (currentJob.status) {
-      case 'queued':
-        return 'Queued';
-      case 'downloading':
-        return 'Downloading...';
-      case 'done':
-        return 'Download complete';
-      case 'error':
-        return 'Error';
+      case 'queued':      return 'Queued';
+      case 'downloading': return 'Downloading...';
+      case 'done':        return mode === 'upload' ? 'Upload complete' : 'Download complete';
+      case 'error':       return 'Error';
     }
   };
 
@@ -158,30 +176,34 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setCurrentJob(null);
     setUrl('');
     setFilenameOverride('');
+    setSelectedFile(null);
+    setUploadFilenameOverride('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="bg-white rounded-lg shadow-lg p-8">
+
+          {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Download className="w-8 h-8 text-slate-700" />
               <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
             </div>
             <div className="flex items-center gap-4">
-              <a
-                href="#/admin"
-                className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2"
-              >
+              <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
                 Admin
               </a>
               {authEnabled && (
-                <button
-                  onClick={onUnauthorized}
-                  className="text-sm text-slate-400 hover:text-slate-700 transition"
-                  title="Sign out"
-                >
+                <button onClick={onUnauthorized} className="text-sm text-slate-400 hover:text-slate-700 transition" title="Sign out">
                   Sign out
                 </button>
               )}
@@ -194,86 +216,146 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label htmlFor="url" className="block text-sm font-medium text-slate-700 mb-2">
-                File URL
-              </label>
-              <input
-                id="url"
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                required
-                placeholder="https://example.com/file.jpg"
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="folder" className="block text-sm font-medium text-slate-700 mb-2">
-                Destination Folder
-              </label>
-              {config.folders.length === 0 ? (
-                <p className="text-sm text-slate-500 italic">
-                  No folders configured. Set <code className="bg-slate-100 px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-slate-100 px-1 rounded">.env</code> file.
-                </p>
-              ) : (
-                <select
-                  id="folder"
-                  value={folderKey}
-                  onChange={(e) => setFolderKey(e.target.value)}
-                  required
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition bg-white"
-                >
-                  {config.folders.map((folder) => (
-                    <option key={folder} value={folder}>
-                      {folder}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="filename" className="block text-sm font-medium text-slate-700 mb-2">
-                Filename Override <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
-              <input
-                id="filename"
-                type="text"
-                value={filenameOverride}
-                onChange={(e) => setFilenameOverride(e.target.value)}
-                placeholder="custom-name.jpg"
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
-              />
-            </div>
-
-            {config.allowedExtensions.length > 0 && (
-              <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">
-                <strong>Allowed extensions:</strong> {config.allowedExtensions.join(', ')}
-              </div>
-            )}
-
+          {/* Mode tabs */}
+          <div className="flex gap-1 mb-6 bg-slate-100 p-1 rounded-lg">
             <button
-              type="submit"
-              disabled={isSubmitting || !url || !folderKey}
-              className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              type="button"
+              onClick={() => { setMode('url'); handleReset(); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+                mode === 'url' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Download File
-                </>
-              )}
+              <Link className="w-4 h-4" />
+              From URL
             </button>
-          </form>
+            <button
+              type="button"
+              onClick={() => { setMode('upload'); handleReset(); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+                mode === 'upload' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              Upload File
+            </button>
+          </div>
 
+          {/* ── URL mode ── */}
+          {mode === 'url' && (
+            <form onSubmit={handleUrlSubmit} className="space-y-5">
+              <div>
+                <label htmlFor="url" className="block text-sm font-medium text-slate-700 mb-2">File URL</label>
+                <input
+                  id="url"
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  required
+                  placeholder="https://example.com/file.jpg"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                />
+              </div>
+
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+
+              <div>
+                <label htmlFor="filename" className="block text-sm font-medium text-slate-700 mb-2">
+                  Filename Override <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="filename"
+                  type="text"
+                  value={filenameOverride}
+                  onChange={(e) => setFilenameOverride(e.target.value)}
+                  placeholder="custom-name.jpg"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                />
+              </div>
+
+              <AllowedExtensionsHint extensions={config.allowedExtensions} />
+
+              <button
+                type="submit"
+                disabled={isSubmitting || !url || !folderKey}
+                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              >
+                {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : <><Download className="w-4 h-4" />Download File</>}
+              </button>
+            </form>
+          )}
+
+          {/* ── Upload mode ── */}
+          {mode === 'upload' && (
+            <form onSubmit={handleUploadSubmit} className="space-y-5">
+              {/* Drop zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`relative flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-lg p-8 cursor-pointer transition ${
+                  isDragging
+                    ? 'border-slate-500 bg-slate-50'
+                    : selectedFile
+                    ? 'border-green-400 bg-green-50'
+                    : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                {selectedFile ? (
+                  <>
+                    <CheckCircle className="w-8 h-8 text-green-500" />
+                    <div className="text-center">
+                      <p className="font-medium text-slate-800">{selectedFile.name}</p>
+                      <p className="text-sm text-slate-500">{formatBytes(selectedFile.size)}</p>
+                    </div>
+                    <p className="text-xs text-slate-400">Click or drop to replace</p>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className={`w-10 h-10 ${isDragging ? 'text-slate-600' : 'text-slate-400'}`} />
+                    <div className="text-center">
+                      <p className="font-medium text-slate-700">Drop a file here</p>
+                      <p className="text-sm text-slate-500">or click to browse</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+
+              <div>
+                <label htmlFor="upload-filename" className="block text-sm font-medium text-slate-700 mb-2">
+                  Save as <span className="text-slate-400 font-normal">(optional — defaults to original filename)</span>
+                </label>
+                <input
+                  id="upload-filename"
+                  type="text"
+                  value={uploadFilenameOverride}
+                  onChange={(e) => setUploadFilenameOverride(e.target.value)}
+                  placeholder={selectedFile?.name || 'custom-name.jpg'}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                />
+              </div>
+
+              <AllowedExtensionsHint extensions={config.allowedExtensions} />
+
+              <button
+                type="submit"
+                disabled={isSubmitting || !selectedFile || !folderKey}
+                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              >
+                {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4" />Upload File</>}
+              </button>
+            </form>
+          )}
+
+          {/* Status panel */}
           {currentJob && (
             <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
               <div className="flex items-center gap-3 mb-2">
@@ -289,17 +371,52 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 </p>
               )}
               {(currentJob.status === 'done' || currentJob.status === 'error') && (
-                <button
-                  onClick={handleReset}
-                  className="mt-3 ml-8 text-sm text-slate-600 hover:text-slate-800 underline"
-                >
-                  Start new download
+                <button onClick={handleReset} className="mt-3 ml-8 text-sm text-slate-600 hover:text-slate-800 underline">
+                  {mode === 'upload' ? 'Upload another file' : 'Start new download'}
                 </button>
               )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Shared sub-components ────────────────────────────────────────────────────
+
+function FolderSelect({ folders, value, onChange }: { folders: string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label htmlFor="folder" className="block text-sm font-medium text-slate-700 mb-2">
+        Destination Folder
+      </label>
+      {folders.length === 0 ? (
+        <p className="text-sm text-slate-500 italic">
+          No folders configured. Set <code className="bg-slate-100 px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-slate-100 px-1 rounded">.env</code> file.
+        </p>
+      ) : (
+        <select
+          id="folder"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required
+          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition bg-white"
+        >
+          {folders.map((f) => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+function AllowedExtensionsHint({ extensions }: { extensions: string[] }) {
+  if (extensions.length === 0) return null;
+  return (
+    <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">
+      <strong>Allowed extensions:</strong> {extensions.join(', ')}
     </div>
   );
 }
