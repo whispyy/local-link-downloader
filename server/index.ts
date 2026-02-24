@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync } from 'fs';
@@ -342,6 +343,121 @@ app.post('/api/download', authMiddleware, async (req, res) => {
   });
 
   res.json({ id: jobId, status: 'queued' });
+});
+
+// POST /api/upload - upload a file directly from the client
+// Uses multer memoryStorage so we can validate before writing to disk.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: (() => {
+      const raw = process.env.MAX_UPLOAD_SIZE || '100mb';
+      const match = raw.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i);
+      if (!match) return 100 * 1024 * 1024;
+      const n = parseFloat(match[1]);
+      const unit = (match[2] || 'b').toLowerCase();
+      const multipliers: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
+      return Math.floor(n * (multipliers[unit] ?? 1));
+    })(),
+  },
+});
+
+app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  const { folderKey, filenameOverride } = req.body as {
+    folderKey?: string;
+    filenameOverride?: string;
+  };
+
+  if (!req.file) {
+    res.status(400).json({ error: 'No file provided' });
+    return;
+  }
+
+  if (!folderKey) {
+    res.status(400).json({ error: 'Missing required field: folderKey' });
+    return;
+  }
+
+  const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+  if (!folderMapping.has(folderKey)) {
+    res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+    return;
+  }
+
+  const destinationFolder = folderMapping.get(folderKey)!;
+
+  let filename = sanitizeFilename(
+    filenameOverride || req.file.originalname || 'upload'
+  );
+  if (!filename) filename = 'upload';
+
+  const allowedExtensions = (process.env.ALLOWED_EXTENSIONS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (allowedExtensions.length > 0) {
+    const dotIdx = filename.lastIndexOf('.');
+    if (dotIdx === -1) {
+      res.status(400).json({ error: 'File has no extension. An extension is required.' });
+      return;
+    }
+    const fileExt = filename.substring(dotIdx).toLowerCase();
+    if (!allowedExtensions.includes(fileExt)) {
+      res.status(400).json({
+        error: `File extension ${fileExt} is not allowed. Allowed: ${allowedExtensions.join(', ')}`,
+      });
+      return;
+    }
+  }
+
+  const fullPath = path.join(destinationFolder, filename);
+
+  // Prevent path traversal
+  const resolvedDest = path.resolve(destinationFolder);
+  const resolvedFull = path.resolve(fullPath);
+  if (!resolvedFull.startsWith(resolvedDest + path.sep)) {
+    res.status(400).json({ error: 'Path traversal detected' });
+    return;
+  }
+
+  if (!existsSync(destinationFolder)) {
+    mkdirSync(destinationFolder, { recursive: true });
+  }
+
+  try {
+    await writeFile(fullPath, req.file.buffer);
+  } catch (err) {
+    log('ERROR', 'Upload write failed', { filename, error: String(err) });
+    res.status(500).json({ error: 'Failed to save file' });
+    return;
+  }
+
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const job: DownloadJob = {
+    id: jobId,
+    url: `[upload] ${filename}`,
+    folderKey,
+    filename,
+    status: 'done',
+    message: `Uploaded to ${fullPath}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  jobs.set(jobId, job);
+  log('INFO', 'File uploaded', { jobId, filename, folderKey, fullPath });
+
+  // Evict after 24 hours
+  setTimeout(() => jobs.delete(jobId), 24 * 60 * 60 * 1000);
+
+  res.json({
+    id: jobId,
+    status: 'done',
+    filename,
+    folder_key: folderKey,
+    message: job.message,
+  });
 });
 
 // GET /api/jobs - list all jobs sorted by createdAt descending
