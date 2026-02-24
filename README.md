@@ -31,6 +31,7 @@ services:
     environment:
       DOWNLOAD_FOLDERS: "images:/downloads/images;videos:/downloads/videos"
       ALLOWED_EXTENSIONS: ".jpg,.png,.gif,.zip,.mp4,.pdf"
+      APP_PASSWORD: "your_secret_password"
     volumes:
       - /mnt/nas/images:/downloads/images
       - /mnt/nas/videos:/downloads/videos
@@ -135,6 +136,7 @@ Edit `docker-compose.yml` and adjust:
 | `DOWNLOAD_FOLDERS` | _(none)_ | Semicolon-separated `key:/path` pairs, e.g. `images:/mnt/images;tmp:/mnt/tmp` |
 | `ALLOWED_EXTENSIONS` | _(none — all allowed)_ | Comma-separated extensions, e.g. `.jpg,.png,.mp4` |
 | `LOG_DIR` | `./logs` | Directory where `downloads.log` is written |
+| `APP_PASSWORD` | _(unset — auth disabled)_ | When set, a password prompt is shown on every new browser session. Sessions last 8 hours. |
 | `STATIC_DIR` | _(empty)_ | When set, Express serves the built frontend from this path (set automatically in Docker) |
 
 ---

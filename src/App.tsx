@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Download, Loader2, CheckCircle, XCircle, Clock } from 'lucide-react';
 
 interface Config {
@@ -14,7 +14,13 @@ interface DownloadJob {
   folder_key?: string;
 }
 
-function App() {
+interface AppProps {
+  token: string;
+  onUnauthorized: () => void;
+  authEnabled: boolean;
+}
+
+function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [config, setConfig] = useState<Config>({ folders: [], allowedExtensions: [] });
   const [url, setUrl] = useState('');
   const [folderKey, setFolderKey] = useState('');
@@ -22,6 +28,11 @@ function App() {
   const [currentJob, setCurrentJob] = useState<DownloadJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
+
+  const authHeaders = useMemo(
+  () => ({ Authorization: `Bearer ${token}` }),
+  [token]
+);
 
   useEffect(() => {
     fetchConfig();
@@ -39,7 +50,8 @@ function App() {
 
   const fetchConfig = async () => {
     try {
-      const response = await fetch('/api/config');
+      const response = await fetch('/api/config', { headers: authHeaders });
+      if (response.status === 401) { onUnauthorized(); return; }
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
       }
@@ -57,7 +69,8 @@ function App() {
 
   const pollStatus = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/status/${jobId}`);
+      const response = await fetch(`/api/status/${jobId}`, { headers: authHeaders });
+      if (response.status === 401) { onUnauthorized(); return; }
       if (!response.ok) {
         console.error('Status poll returned non-OK response:', response.status);
         return;
@@ -77,6 +90,7 @@ function App() {
       const response = await fetch('/api/download', {
         method: 'POST',
         headers: {
+          ...authHeaders,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -85,6 +99,8 @@ function App() {
           filenameOverride: filenameOverride || undefined,
         }),
       });
+
+      if (response.status === 401) { onUnauthorized(); return; }
 
       const data = await response.json();
 
@@ -153,12 +169,23 @@ function App() {
               <Download className="w-8 h-8 text-slate-700" />
               <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
             </div>
-            <a
-              href="#/admin"
-              className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2"
-            >
-              Admin
-            </a>
+            <div className="flex items-center gap-4">
+              <a
+                href="#/admin"
+                className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2"
+              >
+                Admin
+              </a>
+              {authEnabled && (
+                <button
+                  onClick={onUnauthorized}
+                  className="text-sm text-slate-400 hover:text-slate-700 transition"
+                  title="Sign out"
+                >
+                  Sign out
+                </button>
+              )}
+            </div>
           </div>
 
           {configError && (

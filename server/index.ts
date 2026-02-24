@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync } from 'fs';
 import { writeFile, appendFile } from 'fs/promises';
 import path from 'path';
@@ -33,6 +34,50 @@ interface DownloadJob {
 }
 
 const jobs = new Map<string, DownloadJob>();
+
+// ─── Simple token-based auth ──────────────────────────────────────────────────
+// Tokens are in-memory; they expire after 8 hours.
+// Auth is disabled entirely when APP_PASSWORD is not set.
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const sessions = new Map<string, number>(); // token → expiry timestamp
+
+function isAuthEnabled(): boolean {
+  return Boolean(process.env.APP_PASSWORD);
+}
+
+function createSession(): string {
+  const token = randomUUID();
+  sessions.set(token, Date.now() + SESSION_TTL_MS);
+  // Clean up expired sessions lazily
+  for (const [t, exp] of sessions) {
+    if (Date.now() > exp) sessions.delete(t);
+  }
+  return token;
+}
+
+function isValidSession(token: string): boolean {
+  const exp = sessions.get(token);
+  if (!exp) return false;
+  if (Date.now() > exp) {
+    sessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (!isAuthEnabled()) {
+    next();
+    return;
+  }
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!isValidSession(token)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
 
 // Logging utility
 function log(level: 'INFO' | 'ERROR' | 'WARN', message: string, meta?: Record<string, unknown>) {
@@ -112,8 +157,42 @@ async function downloadFile(url: string, destPath: string): Promise<{ success: b
 app.use(cors());
 app.use(express.json());
 
+// Rate-limit login attempts: max 10 per 15 minutes per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later' },
+});
+
+// POST /api/auth - exchange password for a session token
+app.post('/api/auth', authLimiter, (req, res) => {
+  if (!isAuthEnabled()) {
+    // Auth disabled — return a dummy token so the client can proceed
+    res.json({ token: 'no-auth' });
+    return;
+  }
+
+  const { password } = req.body as { password?: string };
+  const expected = process.env.APP_PASSWORD!;
+  const provided = password ?? '';
+  const lengthMatch = provided.length === expected.length;
+  const valueMatch =
+    lengthMatch &&
+    timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  if (!valueMatch) {
+    res.status(401).json({ error: 'Invalid password' });
+    return;
+  }
+
+  const token = createSession();
+  log('INFO', 'New session created');
+  res.json({ token });
+});
+
 // GET /api/config - return folder keys and allowed extensions
-app.get('/api/config', (_req, res) => {
+app.get('/api/config', authMiddleware, (_req, res) => {
   const downloadFoldersEnv = process.env.DOWNLOAD_FOLDERS || '';
   const allowedExtensionsEnv = process.env.ALLOWED_EXTENSIONS || '';
 
@@ -131,7 +210,7 @@ app.get('/api/config', (_req, res) => {
 });
 
 // POST /api/download - start a download job
-app.post('/api/download', async (req, res) => {
+app.post('/api/download', authMiddleware, async (req, res) => {
   const { url, folderKey, filenameOverride } = req.body as {
     url?: string;
     folderKey?: string;
@@ -266,7 +345,7 @@ app.post('/api/download', async (req, res) => {
 });
 
 // GET /api/jobs - list all jobs sorted by createdAt descending
-app.get('/api/jobs', (_req, res) => {
+app.get('/api/jobs', authMiddleware, (_req, res) => {
   const allJobs = Array.from(jobs.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
@@ -286,7 +365,7 @@ app.get('/api/jobs', (_req, res) => {
 });
 
 // GET /api/status/:jobId - get job status
-app.get('/api/status/:jobId', (req, res) => {
+app.get('/api/status/:jobId', authMiddleware, (req, res) => {
   const { jobId } = req.params;
   const job = jobs.get(jobId);
 

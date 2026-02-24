@@ -13,6 +13,8 @@ services:
       # The actual host paths are bound via the volumes section below.
       DOWNLOAD_FOLDERS: "images:/downloads/images;videos:/downloads/videos;tmp:/downloads/tmp"
       ALLOWED_EXTENSIONS: ".jpg,.png,.gif,.zip,.mp4,.pdf,.mkv,.avi,.mov,.mp3,.wav,.flac,.mp4a,.aac,.ogg,.divx,.webm,.mpeg,.mpg"
+      # Uncomment and set a password to enable the login prompt:
+      # APP_PASSWORD: "your_secret_password"
     volumes:
       # ── Download destinations ──────────────────────────────────────────────
       # Format: /host/absolute/path:/container/path

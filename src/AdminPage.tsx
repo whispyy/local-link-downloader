@@ -14,6 +14,12 @@ interface AdminJob {
   updated_at: string;
 }
 
+interface AdminPageProps {
+  token: string;
+  onUnauthorized: () => void;
+  authEnabled: boolean;
+}
+
 const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'queued', label: 'Queued' },
@@ -55,16 +61,19 @@ function truncateUrl(url: string, max = 60) {
   return url.length > max ? url.slice(0, max) + '…' : url;
 }
 
-export default function AdminPage() {
+export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminPageProps) {
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [filter, setFilter] = useState<JobStatus | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
   const fetchJobs = useCallback(async () => {
     try {
-      const response = await fetch('/api/jobs');
+      const response = await fetch('/api/jobs', { headers: authHeaders });
+      if (response.status === 401) { onUnauthorized(); return; }
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
       }
@@ -77,7 +86,7 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     fetchJobs();
@@ -127,6 +136,15 @@ export default function AdminPage() {
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
             </button>
+            {authEnabled && (
+              <button
+                onClick={onUnauthorized}
+                className="text-sm text-slate-400 hover:text-slate-700 transition"
+                title="Sign out"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </div>
 
