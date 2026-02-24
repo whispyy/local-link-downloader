@@ -105,33 +105,33 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
             <a
               href="#"
               onClick={(e) => {
                 e.preventDefault();
                 window.location.hash = '';
               }}
-              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition"
+              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
             </a>
-            <h1 className="text-2xl font-semibold text-slate-800">Download Jobs</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Download Jobs</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {lastRefreshed && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-400 whitespace-nowrap">
                 Updated {lastRefreshed.toLocaleTimeString()}
               </span>
             )}
             <button
               onClick={fetchJobs}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition text-slate-600"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition text-slate-600 whitespace-nowrap"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
@@ -139,7 +139,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
             {authEnabled && (
               <button
                 onClick={onUnauthorized}
-                className="text-sm text-slate-400 hover:text-slate-700 transition"
+                className="text-sm text-slate-400 hover:text-slate-700 transition whitespace-nowrap"
                 title="Sign out"
               >
                 Sign out
@@ -187,8 +187,8 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
             No jobs{filter !== 'all' ? ` with status "${filter}"` : ''}.
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-x-auto">
+            <table className="w-full min-w-max text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
                   <th className="px-4 py-3">Status</th>
