@@ -188,22 +188,22 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-3 sm:p-4">
       <div className="w-full max-w-2xl">
-        <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="bg-white rounded-lg shadow-lg p-5 sm:p-8">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Download className="w-8 h-8 text-slate-700" />
-              <h1 className="text-2xl font-semibold text-slate-800">File Downloader</h1>
+          <div className="flex items-start justify-between mb-6 gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <Download className="w-7 h-7 shrink-0 text-slate-700" />
+              <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 leading-tight">File Downloader</h1>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 shrink-0">
               <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
                 Admin
               </a>
               {authEnabled && (
-                <button onClick={onUnauthorized} className="text-sm text-slate-400 hover:text-slate-700 transition" title="Sign out">
+                <button onClick={onUnauthorized} className="text-sm text-slate-400 hover:text-slate-700 transition whitespace-nowrap" title="Sign out">
                   Sign out
                 </button>
               )}
