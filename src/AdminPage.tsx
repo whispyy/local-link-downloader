@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, ArrowLeft } from 'lucide-react';
+import { formatBytes } from './utils';
 
 type JobStatus = 'queued' | 'downloading' | 'done' | 'error';
 
@@ -10,6 +11,8 @@ interface AdminJob {
   message?: string;
   filename: string;
   folder_key: string;
+  total_bytes?: number;
+  downloaded_bytes?: number;
   created_at: string;
   updated_at: string;
 }
@@ -59,6 +62,30 @@ function formatDate(iso: string) {
 
 function truncateUrl(url: string, max = 60) {
   return url.length > max ? url.slice(0, max) + '…' : url;
+}
+
+function SizeCell({ job }: { job: AdminJob }) {
+  if (job.status === 'queued') return <span className="text-slate-300">—</span>;
+
+  if (job.status === 'downloading') {
+    const dl = job.downloaded_bytes ?? 0;
+    if (job.total_bytes) {
+      const pct = Math.min(100, Math.round((dl / job.total_bytes) * 100));
+      return (
+        <span className="text-slate-500 whitespace-nowrap">
+          {formatBytes(dl)} / {formatBytes(job.total_bytes)}
+          <span className="ml-1 text-xs text-slate-400">({pct}%)</span>
+        </span>
+      );
+    }
+    return <span className="text-slate-500 whitespace-nowrap">{formatBytes(dl)}</span>;
+  }
+
+  if (job.total_bytes != null) {
+    return <span className="text-slate-500 whitespace-nowrap">{formatBytes(job.total_bytes)}</span>;
+  }
+
+  return <span className="text-slate-300">—</span>;
 }
 
 export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminPageProps) {
@@ -194,6 +221,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Filename</th>
                   <th className="px-4 py-3">Folder</th>
+                  <th className="px-4 py-3">Size</th>
                   <th className="px-4 py-3 hidden md:table-cell">URL</th>
                   <th className="px-4 py-3 hidden lg:table-cell">Created</th>
                   <th className="px-4 py-3 hidden lg:table-cell">Updated</th>
@@ -214,6 +242,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{job.folder_key}</td>
+                    <td className="px-4 py-3 text-sm"><SizeCell job={job} /></td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <a
                         href={job.url}

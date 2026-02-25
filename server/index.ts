@@ -30,6 +30,8 @@ interface DownloadJob {
   filename: string;
   status: 'queued' | 'downloading' | 'done' | 'error';
   message?: string;
+  totalBytes?: number;
+  downloadedBytes?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -134,7 +136,11 @@ function isInternalIP(hostname: string): boolean {
   return false;
 }
 
-async function downloadFile(url: string, destPath: string): Promise<{ success: boolean; message?: string }> {
+async function downloadFile(
+  url: string,
+  destPath: string,
+  onProgress?: (downloaded: number, total: number | undefined) => void,
+): Promise<{ success: boolean; message?: string; totalBytes?: number }> {
   try {
     const response = await fetch(url, { method: 'GET', redirect: 'follow' });
 
@@ -142,11 +148,40 @@ async function downloadFile(url: string, destPath: string): Promise<{ success: b
       return { success: false, message: `HTTP error: ${response.status} ${response.statusText}` };
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    const data = Buffer.from(arrayBuffer);
-    await writeFile(destPath, data);
+    const contentLength = response.headers.get('content-length');
+    const parsedLength = contentLength ? parseInt(contentLength, 10) : NaN;
+    const total = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined;
 
-    return { success: true };
+    if (response.body) {
+      const chunks: Buffer[] = [];
+      let downloaded = 0;
+      let lastReported = 0;
+      const THROTTLE_BYTES = 512 * 1024; // report at most every 512 KB
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        chunks.push(chunk);
+        downloaded += chunk.length;
+        const threshold = total ? Math.max(total * 0.01, THROTTLE_BYTES) : THROTTLE_BYTES;
+        if (downloaded - lastReported >= threshold) {
+          lastReported = downloaded;
+          onProgress?.(downloaded, total);
+        }
+      }
+      // Always fire a final progress update with the true total
+      onProgress?.(downloaded, total);
+      const data = Buffer.concat(chunks);
+      await writeFile(destPath, data);
+      return { success: true, totalBytes: downloaded };
+    } else {
+      // Fallback for environments without streaming body
+      const arrayBuffer = await response.arrayBuffer();
+      const data = Buffer.from(arrayBuffer);
+      await writeFile(destPath, data);
+      return { success: true, totalBytes: data.length };
+    }
   } catch (error) {
     return {
       success: false,
@@ -320,14 +355,24 @@ app.post('/api/download', authMiddleware, async (req, res) => {
   setImmediate(async () => {
     const j = jobs.get(jobId)!;
     j.status = 'downloading';
+    j.downloadedBytes = 0;
     j.updatedAt = new Date().toISOString();
     log('INFO', 'Download started', { jobId, url, fullPath });
 
-    const result = await downloadFile(url, fullPath);
+    const result = await downloadFile(url, fullPath, (downloaded, total) => {
+      const jj = jobs.get(jobId);
+      if (jj) {
+        jj.downloadedBytes = downloaded;
+        if (total !== undefined) jj.totalBytes = total;
+        jj.updatedAt = new Date().toISOString();
+      }
+    });
 
     j.updatedAt = new Date().toISOString();
     if (result.success) {
       j.status = 'done';
+      j.downloadedBytes = result.totalBytes;
+      j.totalBytes = result.totalBytes;
       j.message = `Downloaded to ${fullPath}`;
       log('INFO', 'Download completed', { jobId, fullPath });
     } else {
@@ -474,6 +519,8 @@ app.get('/api/jobs', authMiddleware, (_req, res) => {
       message: job.message,
       filename: job.filename,
       folder_key: job.folderKey,
+      total_bytes: job.totalBytes,
+      downloaded_bytes: job.downloadedBytes,
       created_at: job.createdAt,
       updated_at: job.updatedAt,
     }))
@@ -496,6 +543,8 @@ app.get('/api/status/:jobId', authMiddleware, (req, res) => {
     message: job.message,
     filename: job.filename,
     folder_key: job.folderKey,
+    total_bytes: job.totalBytes,
+    downloaded_bytes: job.downloadedBytes,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
   });
