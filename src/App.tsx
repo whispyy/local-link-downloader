@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud } from 'lucide-react';
+import { formatBytes } from './utils';
 
 interface Config {
   folders: string[];
@@ -12,6 +13,8 @@ interface DownloadJob {
   message?: string;
   filename?: string;
   folder_key?: string;
+  total_bytes?: number;
+  downloaded_bytes?: number;
 }
 
 interface AppProps {
@@ -179,12 +182,6 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setSelectedFile(null);
     setUploadFilenameOverride('');
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   };
 
   return (
@@ -362,12 +359,42 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 {getStatusIcon()}
                 <span className="font-medium text-slate-800">{getStatusText()}</span>
               </div>
+              {currentJob.status === 'downloading' && (
+                <div className="ml-8 mt-1">
+                  {currentJob.total_bytes ? (
+                    (() => {
+                      const pct = Math.min(100, Math.round(((currentJob.downloaded_bytes ?? 0) / currentJob.total_bytes) * 100));
+                      return (
+                        <>
+                          <div className="flex justify-between text-xs text-slate-500 mb-1">
+                            <span>{formatBytes(currentJob.downloaded_bytes ?? 0)} / {formatBytes(currentJob.total_bytes)}</span>
+                            <span>{pct}%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5">
+                            <div
+                              className="bg-slate-600 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : currentJob.downloaded_bytes != null ? (
+                    <p className="text-xs text-slate-500">{formatBytes(currentJob.downloaded_bytes)} downloaded</p>
+                  ) : null}
+                </div>
+              )}
+              {currentJob.status === 'done' && currentJob.total_bytes != null && (
+                <p className="text-xs text-slate-500 ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
+              )}
               {currentJob.message && (
-                <p className="text-sm text-slate-600 ml-8">{currentJob.message}</p>
+                <p className="text-sm text-slate-600 ml-8 mt-1 break-all">{currentJob.message}</p>
               )}
               {currentJob.filename && (
-                <p className="text-sm text-slate-600 ml-8">
-                  File: {currentJob.filename} → {currentJob.folder_key}
+                <p className="text-sm text-slate-600 ml-8 break-all">
+                  <span className="font-medium">File:</span> {currentJob.filename}
+                  <span className="mx-1 text-slate-400">→</span>
+                  <span className="text-slate-500">{currentJob.folder_key}</span>
                 </p>
               )}
               {(currentJob.status === 'done' || currentJob.status === 'error') && (
