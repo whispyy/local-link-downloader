@@ -1,13 +1,29 @@
 # Web Downloader
 
-A self-hosted web UI for downloading files from URLs to folders on your machine.
+A self-hosted web UI for downloading files from URLs — or uploading local files — to folders on your machine.
 
 - **Frontend** — React + Vite + Tailwind CSS
 - **Backend** — Express (TypeScript), runs on Node.js
-- **Admin page** — `/admin` (hash route `#/admin`) — live job list with status filter
+- **Admin page** — `/admin` (hash route `#/admin`) — live job list with status filter, progress display, and stop button
 
 **Published image:** `ghcr.io/<your-github-username>/web-downloader:latest`
 _(replace `<your-github-username>` with your actual GitHub username / org)_
+
+---
+
+## Features
+
+| Feature | Details |
+|---------|---------|
+| **Download from URL** | Paste any HTTP/HTTPS URL; the server fetches the file server-side |
+| **Upload from local file** | Drag-and-drop or browse to upload a file directly from your browser |
+| **Download progress** | Live progress bar with bytes downloaded / total size and percentage |
+| **Cancel / stop** | Cancel a queued or in-progress download from the main UI or the Admin page |
+| **Multiple destination folders** | Configure any number of named folders via `DOWNLOAD_FOLDERS` |
+| **Extension allow-list** | Optionally restrict which file extensions are accepted |
+| **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
+| **Admin job list** | `/admin` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
+| **Persistent logs** | Every download/upload is appended to `logs/downloads.log` |
 
 ---
 
@@ -123,6 +139,7 @@ Edit `docker-compose.yml` and adjust:
 |---------|---------------|
 | `DOWNLOAD_FOLDERS` | Add/rename folder keys and their container-side paths |
 | `ALLOWED_EXTENSIONS` | Comma-separated list of permitted file extensions |
+| `MAX_UPLOAD_SIZE` | Maximum size for direct browser uploads (default `10gb`) |
 | `volumes` | Map each container path to the real host path |
 | `ports` | Change `3000:3000` if port 3000 is already in use |
 
@@ -135,6 +152,7 @@ Edit `docker-compose.yml` and adjust:
 | `API_PORT` | `3001` (dev) / `3000` (Docker) | Port the Express server listens on |
 | `DOWNLOAD_FOLDERS` | _(none)_ | Semicolon-separated `key:/path` pairs, e.g. `images:/mnt/images;tmp:/mnt/tmp` |
 | `ALLOWED_EXTENSIONS` | _(none — all allowed)_ | Comma-separated extensions, e.g. `.jpg,.png,.mp4` |
+| `MAX_UPLOAD_SIZE` | `10gb` | Maximum file size for direct browser uploads. Accepts `b`, `kb`, `mb`, `gb` units |
 | `LOG_DIR` | `./logs` | Directory where `downloads.log` is written |
 | `APP_PASSWORD` | _(unset — auth disabled)_ | When set, a password prompt is shown on every new browser session. Sessions last 8 hours. |
 | `STATIC_DIR` | _(empty)_ | When set, Express serves the built frontend from this path (set automatically in Docker) |
@@ -145,8 +163,9 @@ Edit `docker-compose.yml` and adjust:
 
 ```
 ├── src/                  # React frontend
-│   ├── App.tsx           # Main downloader UI
+│   ├── App.tsx           # Main downloader UI (URL download + file upload)
 │   ├── AdminPage.tsx     # /admin job list page
+│   ├── LoginPage.tsx     # Password prompt (when APP_PASSWORD is set)
 │   └── main.tsx          # Hash-based router
 ├── server/
 │   └── index.ts          # Express API server
@@ -162,15 +181,22 @@ Edit `docker-compose.yml` and adjust:
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/api/auth` | Exchange password for a session token (`{ password }`) |
 | `GET` | `/api/config` | Returns configured folder keys and allowed extensions |
-| `POST` | `/api/download` | Start a download job (`{ url, folderKey, filenameOverride? }`) |
-| `GET` | `/api/status/:jobId` | Get status of a specific job |
+| `POST` | `/api/download` | Start a URL download job (`{ url, folderKey, filenameOverride? }`) |
+| `POST` | `/api/upload` | Upload a file directly from the browser (`multipart/form-data`: `file`, `folderKey`, `filenameOverride?`) |
 | `GET` | `/api/jobs` | List all jobs, sorted newest first |
+| `GET` | `/api/status/:jobId` | Get status of a specific job (includes `downloaded_bytes` / `total_bytes`) |
+| `DELETE` | `/api/jobs/:jobId` | Cancel a queued or in-progress download and remove any partial file |
+
+All endpoints except `POST /api/auth` require a `Authorization: Bearer <token>` header when `APP_PASSWORD` is set.
 
 ---
 
 ## Notes
 
-- **Jobs are in-memory only.** They are lost when the container/server restarts. The downloaded files and `logs/downloads.log` persist via volume mounts.
+- **Jobs are in-memory only.** They are lost when the container/server restarts. Downloaded files and `logs/downloads.log` persist via volume mounts. Jobs are automatically evicted from memory after 24 hours.
 - **Logs** are written to `LOG_DIR/downloads.log`. Mount `./logs:/app/logs` in Docker to keep them on the host.
+- **Cancellation** aborts the in-flight HTTP fetch and deletes any partial file on disk.
+- **Upload size limit** is enforced server-side by `MAX_UPLOAD_SIZE` (default `10gb`). Multer rejects oversized uploads before they are written to disk.
 - The server blocks downloads to internal/private IP ranges to prevent SSRF. Redirects are followed — see security notes in the code if you need stricter controls.
