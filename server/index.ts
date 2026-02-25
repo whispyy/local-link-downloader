@@ -4,7 +4,7 @@ import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync } from 'fs';
-import { writeFile, appendFile } from 'fs/promises';
+import { writeFile, appendFile, unlink } from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
 
@@ -28,12 +28,14 @@ interface DownloadJob {
   url: string;
   folderKey: string;
   filename: string;
-  status: 'queued' | 'downloading' | 'done' | 'error';
+  destPath: string;
+  status: 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
   message?: string;
   totalBytes?: number;
   downloadedBytes?: number;
   createdAt: string;
   updatedAt: string;
+  abortController?: AbortController;
 }
 
 const jobs = new Map<string, DownloadJob>();
@@ -139,10 +141,11 @@ function isInternalIP(hostname: string): boolean {
 async function downloadFile(
   url: string,
   destPath: string,
+  signal: AbortSignal,
   onProgress?: (downloaded: number, total: number | undefined) => void,
-): Promise<{ success: boolean; message?: string; totalBytes?: number }> {
+): Promise<{ success: boolean; cancelled?: boolean; message?: string; totalBytes?: number }> {
   try {
-    const response = await fetch(url, { method: 'GET', redirect: 'follow' });
+    const response = await fetch(url, { method: 'GET', redirect: 'follow', signal });
 
     if (!response.ok) {
       return { success: false, message: `HTTP error: ${response.status} ${response.statusText}` };
@@ -159,6 +162,10 @@ async function downloadFile(
       const THROTTLE_BYTES = 512 * 1024; // report at most every 512 KB
       const reader = response.body.getReader();
       while (true) {
+        if (signal.aborted) {
+          await reader.cancel();
+          return { success: false, cancelled: true };
+        }
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = Buffer.from(value);
@@ -183,6 +190,9 @@ async function downloadFile(
       return { success: true, totalBytes: data.length };
     }
   } catch (error) {
+    if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      return { success: false, cancelled: true };
+    }
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Download failed',
@@ -338,14 +348,18 @@ app.post('/api/download', authMiddleware, async (req, res) => {
   const jobId = randomUUID();
   const now = new Date().toISOString();
 
+  const abortController = new AbortController();
+
   const job: DownloadJob = {
     id: jobId,
     url,
     folderKey,
     filename,
+    destPath: fullPath,
     status: 'queued',
     createdAt: now,
     updatedAt: now,
+    abortController,
   };
 
   jobs.set(jobId, job);
@@ -359,7 +373,7 @@ app.post('/api/download', authMiddleware, async (req, res) => {
     j.updatedAt = new Date().toISOString();
     log('INFO', 'Download started', { jobId, url, fullPath });
 
-    const result = await downloadFile(url, fullPath, (downloaded, total) => {
+    const result = await downloadFile(url, fullPath, abortController.signal, (downloaded, total) => {
       const jj = jobs.get(jobId);
       if (jj) {
         jj.downloadedBytes = downloaded;
@@ -369,7 +383,15 @@ app.post('/api/download', authMiddleware, async (req, res) => {
     });
 
     j.updatedAt = new Date().toISOString();
-    if (result.success) {
+    j.abortController = undefined;
+
+    if (result.cancelled) {
+      j.status = 'cancelled';
+      j.message = 'Download cancelled';
+      log('INFO', 'Download cancelled', { jobId });
+      // Remove partial file if it exists
+      unlink(fullPath).catch(() => {});
+    } else if (result.success) {
       j.status = 'done';
       j.downloadedBytes = result.totalBytes;
       j.totalBytes = result.totalBytes;
@@ -381,7 +403,7 @@ app.post('/api/download', authMiddleware, async (req, res) => {
       log('ERROR', 'Download failed', { jobId, error: result.message });
     }
 
-    // Evict completed/failed jobs after 24 hours to prevent unbounded memory growth
+    // Evict completed/failed/cancelled jobs after 24 hours to prevent unbounded memory growth
     setTimeout(() => {
       jobs.delete(jobId);
     }, 24 * 60 * 60 * 1000);
@@ -396,7 +418,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: (() => {
-      const raw = process.env.MAX_UPLOAD_SIZE || '100mb';
+      const raw = process.env.MAX_UPLOAD_SIZE || '10gb';
       const match = raw.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i);
       if (!match) return 100 * 1024 * 1024;
       const n = parseFloat(match[1]);
@@ -485,6 +507,7 @@ app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) 
     url: `[upload] ${filename}`,
     folderKey,
     filename,
+    destPath: fullPath,
     status: 'done',
     message: `Uploaded to ${fullPath}`,
     createdAt: now,
@@ -525,6 +548,36 @@ app.get('/api/jobs', authMiddleware, (_req, res) => {
       updated_at: job.updatedAt,
     }))
   );
+});
+
+// DELETE /api/jobs/:jobId - cancel a queued or downloading job and remove the partial file
+app.delete('/api/jobs/:jobId', authMiddleware, async (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  if (job.status !== 'queued' && job.status !== 'downloading') {
+    res.status(400).json({ error: `Cannot cancel a job with status "${job.status}"` });
+    return;
+  }
+
+  // Synchronously mark as cancelled so any immediate status poll sees the right state
+  job.status = 'cancelled';
+  job.message = 'Download cancelled';
+  job.updatedAt = new Date().toISOString();
+
+  // Abort the in-flight fetch if it's running; the setImmediate callback will
+  // handle partial-file cleanup when it detects result.cancelled === true.
+  if (job.abortController) {
+    job.abortController.abort();
+  }
+
+  log('INFO', 'Job cancelled', { jobId });
+  res.json({ id: jobId, status: 'cancelled' });
 });
 
 // GET /api/status/:jobId - get job status

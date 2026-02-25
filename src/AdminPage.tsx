@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, ArrowLeft, StopCircle, ChevronDown } from 'lucide-react';
 import { formatBytes } from './utils';
 
-type JobStatus = 'queued' | 'downloading' | 'done' | 'error';
+const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
+
+type JobStatus = 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
 
 interface AdminJob {
   id: string;
@@ -29,6 +31,7 @@ const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
   { value: 'downloading', label: 'Downloading' },
   { value: 'done', label: 'Done' },
   { value: 'error', label: 'Error' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 function StatusBadge({ status }: { status: JobStatus }) {
@@ -37,6 +40,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
     downloading: 'bg-yellow-100 text-yellow-700',
     done: 'bg-green-100 text-green-700',
     error: 'bg-red-100 text-red-700',
+    cancelled: 'bg-slate-100 text-slate-500',
   };
 
   const icons: Record<JobStatus, JSX.Element> = {
@@ -44,6 +48,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
     downloading: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
     done: <CheckCircle className="w-3.5 h-3.5" />,
     error: <XCircle className="w-3.5 h-3.5" />,
+    cancelled: <StopCircle className="w-3.5 h-3.5" />,
   };
 
   return (
@@ -60,9 +65,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
 }
 
-function truncateUrl(url: string, max = 60) {
-  return url.length > max ? url.slice(0, max) + '…' : url;
-}
 
 function SizeCell({ job }: { job: AdminJob }) {
   if (job.status === 'queued') return <span className="text-slate-300">—</span>;
@@ -94,8 +96,47 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((jobId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }, []);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
+
+  const handleStop = useCallback(async (jobId: string) => {
+    setStoppingIds((prev) => new Set(prev).add(jobId));
+    try {
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      if (response.status === 401) { onUnauthorized(); return; }
+      if (response.ok) {
+        // Optimistically update the job status in local state on success
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId ? { ...j, status: 'cancelled' as JobStatus, message: 'Download cancelled' } : j
+          )
+        );
+      }
+      // Non-ok responses (e.g. 400 if already completed): next poll will reflect real state
+    } catch {
+      // Network error — next poll will reflect the real state
+    } finally {
+      setStoppingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  }, [token]);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -117,7 +158,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
 
   useEffect(() => {
     fetchJobs();
-    const interval = setInterval(fetchJobs, 5000);
+    const interval = setInterval(fetchJobs, FETCH_JOBS_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchJobs]);
 
@@ -129,6 +170,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
     downloading: jobs.filter((j) => j.status === 'downloading').length,
     done: jobs.filter((j) => j.status === 'done').length,
     error: jobs.filter((j) => j.status === 'error').length,
+    cancelled: jobs.filter((j) => j.status === 'cancelled').length,
   };
 
   return (
@@ -215,53 +257,100 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-x-auto">
-            <table className="w-full min-w-max text-sm">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 w-6"></th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Filename</th>
                   <th className="px-4 py-3">Folder</th>
-                  <th className="px-4 py-3">Size</th>
-                  <th className="px-4 py-3 hidden md:table-cell">URL</th>
-                  <th className="px-4 py-3 hidden lg:table-cell">Created</th>
-                  <th className="px-4 py-3 hidden lg:table-cell">Updated</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((job) => (
-                  <tr key={job.id} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <StatusBadge status={job.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-slate-700">{job.filename}</span>
-                      {job.message && (
-                        <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs" title={job.message}>
-                          {job.message}
-                        </p>
+                {filtered.map((job) => {
+                  const expanded = expandedIds.has(job.id);
+                  return (
+                    <React.Fragment key={job.id}>
+                      <tr className="hover:bg-slate-50 transition">
+                        {/* Expand toggle */}
+                        <td className="px-2 py-3 text-center">
+                          <button
+                            onClick={() => toggleExpand(job.id)}
+                            title={expanded ? 'Collapse details' : 'Expand details'}
+                            className="text-slate-300 hover:text-slate-500 transition"
+                          >
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
+                            />
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <StatusBadge status={job.status} />
+                            {(job.status === 'queued' || job.status === 'downloading') && (
+                              <button
+                                onClick={() => handleStop(job.id)}
+                                disabled={stoppingIds.has(job.id)}
+                                title="Stop and remove"
+                                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {stoppingIds.has(job.id)
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <StopCircle className="w-3 h-3" />}
+                                Stop
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-slate-700">{job.filename}</span>
+                          {(job.status !== 'queued' && (job.downloaded_bytes != null || job.total_bytes != null)) && (
+                            <span className="block text-xs text-slate-400 mt-0.5">
+                              <SizeCell job={job} />
+                            </span>
+                          )}
+                          {job.message && (
+                            <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs" title={job.message}>
+                              {job.message}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{job.folder_key}</td>
+                      </tr>
+                      {expanded && (
+                        <tr className="bg-slate-50">
+                          <td colSpan={1} aria-hidden="true" />
+                          <td colSpan={3} className="px-4 pb-3 pt-1">
+                            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
+                              <div>
+                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">URL</dt>
+                                <dd>
+                                  <a
+                                    href={/^https?:\/\//i.test(job.url) ? job.url : '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-slate-500 hover:text-slate-800 break-all transition"
+                                    title={job.url}
+                                  >
+                                    {job.url}
+                                  </a>
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">Created</dt>
+                                <dd className="text-slate-500">{formatDate(job.created_at)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">Updated</dt>
+                                <dd className="text-slate-500">{formatDate(job.updated_at)}</dd>
+                              </div>
+                            </dl>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{job.folder_key}</td>
-                    <td className="px-4 py-3 text-sm"><SizeCell job={job} /></td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <a
-                        href={job.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-slate-400 hover:text-slate-700 transition truncate block max-w-xs"
-                        title={job.url}
-                      >
-                        {truncateUrl(job.url)}
-                      </a>
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-slate-400 whitespace-nowrap">
-                      {formatDate(job.created_at)}
-                    </td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-slate-400 whitespace-nowrap">
-                      {formatDate(job.updated_at)}
-                    </td>
-                  </tr>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
