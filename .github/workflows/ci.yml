@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "**"
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Lint ──────────────────────────────────────────────────────────────────
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      # ── Typecheck ─────────────────────────────────────────────────────────────
+      - name: Typecheck — frontend (tsconfig.app.json)
+        run: npm run typecheck
+
+      - name: Typecheck — server (tsconfig.server.json)
+        run: npx tsc --noEmit -p tsconfig.server.json
+
+      - name: Typecheck — tests (tsconfig.test.json)
+        run: npx tsc --noEmit -p tsconfig.test.json
+
+      # ── Integration tests ─────────────────────────────────────────────────────
+      # Network-dependent tests (D10, X2, X4) are skipped unless TEST_NETWORK=1.
+      # They are intentionally left out of CI to avoid flakiness from external
+      # service availability.  Run locally with: TEST_NETWORK=1 npm run test:integration
+      - name: Integration tests
+        run: npm run test:integration:ci
