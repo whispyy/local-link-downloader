@@ -48,6 +48,10 @@ jobs:
             # Tag with short commit SHA (e.g. :sha-abc1234)
             type=sha,prefix=sha-
 
+      - name: Set short commit SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -55,6 +59,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COMMIT_HASH=${{ steps.sha.outputs.short }}
           # Cache layers between runs using the GitHub Actions cache
           cache-from: type=gha
           cache-to: type=gha,mode=max

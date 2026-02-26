@@ -7,6 +7,16 @@ import './index.css';
 
 const SESSION_KEY = 'wd_token';
 
+// Build-time constant — rendered once, never changes at runtime.
+const VersionBadge = () => (
+  <span
+    className="fixed bottom-2 right-3 text-[10px] font-mono text-slate-400 select-none opacity-50 hover:opacity-100 transition-opacity"
+    title={`Version: ${__COMMIT_HASH__}`}
+  >
+    {__COMMIT_HASH__}
+  </span>
+);
+
 function Root() {
   const [hash, setHash] = useState(window.location.hash);
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
@@ -63,16 +73,16 @@ function Root() {
   }
 
   if (!token) {
-    return <LoginPage onSuccess={handleLogin} />;
+    return <><LoginPage onSuccess={handleLogin} /><VersionBadge /></>;
   }
 
   const authEnabled = token !== 'no-auth';
 
   if (hash === '#/admin') {
-    return <AdminPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} />;
+    return <><AdminPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
-  return <App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} />;
+  return <><App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
 }
 
 createRoot(document.getElementById('root')!).render(

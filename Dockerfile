@@ -1,6 +1,11 @@
 # ─── Stage 1: Build the React frontend ───────────────────────────────────────
 FROM node:20-alpine AS frontend-builder
 
+# Accept the git commit SHA from the CI build pipeline (e.g. GitHub Actions).
+# Falls back to "unknown" when building locally without passing the arg.
+# Not promoted to ENV — only needed during the frontend build step.
+ARG COMMIT_HASH=unknown
+
 WORKDIR /app
 
 # Install dependencies
@@ -11,7 +16,7 @@ RUN npm ci
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
 COPY postcss.config.js tailwind.config.js eslint.config.js ./
 COPY src/ ./src/
-RUN npm run build
+RUN COMMIT_HASH=$COMMIT_HASH npm run build
 
 # ─── Stage 2: Build the Express server ───────────────────────────────────────
 FROM node:20-alpine AS server-builder

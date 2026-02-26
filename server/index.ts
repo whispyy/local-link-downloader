@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import path from 'path';
-import { buildApp } from './app.js';
+import { buildApp } from './app';
 
 const PORT = process.env.API_PORT || 3001;
 const LOG_DIR = process.env.LOG_DIR || './logs';
