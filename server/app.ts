@@ -529,7 +529,7 @@ export function buildApp() {
   });
 
   // ── POST /api/torrent ───────────────────────────────────────────────────────
-  app.post('/api/torrent', authMiddleware, upload.single('torrent'), async (req, res) => {
+  app.post('/api/torrent', authMiddleware, upload.single('torrent'), (req, res) => {
     const { folderKey, magnet } = req.body as { folderKey?: string; magnet?: string };
     const torrentBuffer = req.file?.buffer;
 
@@ -577,7 +577,12 @@ export function buildApp() {
     log('INFO', 'Torrent job created', { jobId, folderKey });
 
     setImmediate(() => {
-      const j = jobs.get(jobId)!;
+      const j = jobs.get(jobId);
+      if (!j || j.status === 'cancelled') {
+        // Job was cancelled before we got here — just ensure cleanup timer is set
+        if (j) setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+        return;
+      }
       j.status = 'downloading';
       j.downloadedBytes = 0;
       j.updatedAt = new Date().toISOString();
@@ -629,8 +634,8 @@ export function buildApp() {
         jj.message = `Downloaded to ${destinationFolder}`;
         jj.torrentRef = undefined;
         jj.updatedAt = new Date().toISOString();
-        torrent.destroy();
         log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
+        torrent.destroy();
         setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
       });
 

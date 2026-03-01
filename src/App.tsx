@@ -204,6 +204,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       case 'queued':      return <Clock className="w-5 h-5 text-blue-500" />;
       case 'downloading': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
       case 'done':        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'cancelled':   return <XCircle className="w-5 h-5 text-slate-400" />;
       case 'error':       return <XCircle className="w-5 h-5 text-red-500" />;
     }
   };
