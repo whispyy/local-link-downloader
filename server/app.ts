@@ -32,6 +32,26 @@ export interface DownloadJob {
   createdAt: string;
   updatedAt: string;
   abortController?: AbortController;
+  // Torrent-specific
+  type?: 'http' | 'torrent';
+  peers?: number;
+  downloadSpeed?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  torrentRef?: any;
+}
+
+// ─── WebTorrent client (lazy singleton) ──────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _wtClient: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getWTClient(): any {
+  if (!_wtClient) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const WTC = require('webtorrent');
+    _wtClient = new WTC();
+  }
+  return _wtClient;
 }
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
@@ -508,6 +528,129 @@ export function buildApp() {
     });
   });
 
+  // ── POST /api/torrent ───────────────────────────────────────────────────────
+  app.post('/api/torrent', authMiddleware, upload.single('torrent'), async (req, res) => {
+    const { folderKey, magnet } = req.body as { folderKey?: string; magnet?: string };
+    const torrentBuffer = req.file?.buffer;
+
+    if (!folderKey) {
+      res.status(400).json({ error: 'Missing required field: folderKey' });
+      return;
+    }
+    if (!magnet && !torrentBuffer) {
+      res.status(400).json({ error: 'Provide a magnet link or .torrent file' });
+      return;
+    }
+    if (magnet && !magnet.startsWith('magnet:')) {
+      res.status(400).json({ error: 'Invalid magnet link format' });
+      return;
+    }
+
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+    const destinationFolder = folderMapping.get(folderKey)!;
+
+    if (!existsSync(destinationFolder)) {
+      mkdirSync(destinationFolder, { recursive: true });
+    }
+
+    const jobId = randomUUID();
+    const now = new Date().toISOString();
+    const torrentInput = magnet || torrentBuffer!;
+
+    const job: DownloadJob = {
+      id: jobId,
+      url: magnet || '[torrent file]',
+      folderKey,
+      filename: '',
+      destPath: destinationFolder,
+      status: 'queued',
+      type: 'torrent',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    jobs.set(jobId, job);
+    log('INFO', 'Torrent job created', { jobId, folderKey });
+
+    setImmediate(() => {
+      const j = jobs.get(jobId)!;
+      j.status = 'downloading';
+      j.downloadedBytes = 0;
+      j.updatedAt = new Date().toISOString();
+
+      let client: ReturnType<typeof getWTClient>;
+      try {
+        client = getWTClient();
+      } catch (err) {
+        j.status = 'error';
+        j.message = err instanceof Error ? err.message : 'Failed to initialize torrent client';
+        j.updatedAt = new Date().toISOString();
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const torrent = client.add(torrentInput, { path: destinationFolder }, (t: any) => {
+        const jj = jobs.get(jobId);
+        if (jj) {
+          jj.filename = t.name;
+          jj.totalBytes = t.length || undefined;
+          jj.updatedAt = new Date().toISOString();
+        }
+      });
+
+      j.torrentRef = torrent;
+
+      const progressInterval = setInterval(() => {
+        const jj = jobs.get(jobId);
+        if (!jj || jj.status !== 'downloading') { clearInterval(progressInterval); return; }
+        jj.downloadedBytes = torrent.downloaded;
+        if (torrent.length) jj.totalBytes = torrent.length;
+        if (torrent.name && !jj.filename) jj.filename = torrent.name;
+        jj.peers = torrent.numPeers;
+        jj.downloadSpeed = Math.round(torrent.downloadSpeed);
+        jj.updatedAt = new Date().toISOString();
+      }, 500);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      torrent.on('done', () => {
+        clearInterval(progressInterval);
+        const jj = jobs.get(jobId);
+        if (!jj) return;
+        jj.status = 'done';
+        jj.downloadedBytes = torrent.length;
+        jj.totalBytes = torrent.length;
+        jj.filename = torrent.name;
+        jj.peers = undefined;
+        jj.downloadSpeed = undefined;
+        jj.message = `Downloaded to ${destinationFolder}`;
+        jj.torrentRef = undefined;
+        jj.updatedAt = new Date().toISOString();
+        torrent.destroy();
+        log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
+        setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      torrent.on('error', (err: any) => {
+        clearInterval(progressInterval);
+        const jj = jobs.get(jobId);
+        if (!jj) return;
+        jj.status = 'error';
+        jj.message = err instanceof Error ? err.message : String(err);
+        jj.torrentRef = undefined;
+        jj.updatedAt = new Date().toISOString();
+        log('ERROR', 'Torrent error', { jobId, error: jj.message });
+        setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+      });
+    });
+
+    res.json({ id: jobId, status: 'queued', type: 'torrent' });
+  });
+
   // ── GET /api/jobs ───────────────────────────────────────────────────────────
   app.get('/api/jobs', authMiddleware, (_req, res) => {
     const allJobs = Array.from(jobs.values()).sort(
@@ -525,6 +668,9 @@ export function buildApp() {
         downloaded_bytes: job.downloadedBytes,
         created_at: job.createdAt,
         updated_at: job.updatedAt,
+        type: job.type,
+        peers: job.peers,
+        download_speed: job.downloadSpeed,
       })),
     );
   });
@@ -545,6 +691,11 @@ export function buildApp() {
     job.message = 'Download cancelled';
     job.updatedAt = new Date().toISOString();
     if (job.abortController) job.abortController.abort();
+    if (job.type === 'torrent' && job.torrentRef) {
+      job.torrentRef.destroy();
+      job.torrentRef = undefined;
+      setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+    }
     log('INFO', 'Job cancelled', { jobId });
     res.json({ id: jobId, status: 'cancelled' });
   });
@@ -567,6 +718,9 @@ export function buildApp() {
       downloaded_bytes: job.downloadedBytes,
       created_at: job.createdAt,
       updated_at: job.updatedAt,
+      type: job.type,
+      peers: job.peers,
+      download_speed: job.downloadSpeed,
     });
   });
 

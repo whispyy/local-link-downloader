@@ -1,13 +1,12 @@
-# Web Downloader
+# Link Downloader
 
-A self-hosted web UI for downloading files from URLs — or uploading local files — to folders on your machine.
+A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents — all saved to folders on your machine.
 
 - **Frontend** — React + Vite + Tailwind CSS
 - **Backend** — Express (TypeScript), runs on Node.js
 - **Admin page** — `/admin` (hash route `#/admin`) — live job list with status filter, progress display, and stop button
 
-**Published image:** `ghcr.io/<your-github-username>/web-downloader:latest`
-_(replace `<your-github-username>` with your actual GitHub username / org)_
+**Published image:** `ghcr.io/whispyy/local-link-downloader:latest`
 
 ---
 
@@ -17,13 +16,14 @@ _(replace `<your-github-username>` with your actual GitHub username / org)_
 |---------|---------|
 | **Download from URL** | Paste any HTTP/HTTPS URL; the server fetches the file server-side |
 | **Upload from local file** | Drag-and-drop or browse to upload a file directly from your browser |
+| **Torrent download** | Paste a magnet link or drop a `.torrent` file; downloads via BitTorrent with live peer count and speed |
 | **Download progress** | Live progress bar with bytes downloaded / total size and percentage |
-| **Cancel / stop** | Cancel a queued or in-progress download from the main UI or the Admin page |
+| **Cancel / stop** | Cancel a queued or in-progress download (including torrents) from the main UI or the Admin page |
 | **Multiple destination folders** | Configure any number of named folders via `DOWNLOAD_FOLDERS` |
-| **Extension allow-list** | Optionally restrict which file extensions are accepted |
+| **Extension allow-list** | Optionally restrict which file extensions are accepted (HTTP/upload only — does not apply to torrents) |
 | **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
 | **Admin job list** | `/admin` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
-| **Persistent logs** | Every download/upload is appended to `logs/downloads.log` |
+| **Persistent logs** | Every download/upload/torrent is appended to `logs/downloads.log` |
 
 ---
 
@@ -32,7 +32,7 @@ _(replace `<your-github-username>` with your actual GitHub username / org)_
 No need to clone this repo or build anything. Pull the image directly:
 
 ```bash
-docker pull ghcr.io/<your-github-username>/web-downloader:latest
+docker pull ghcr.io/whispyy/local-link-downloader:latest
 ```
 
 Or reference it in another project's `docker-compose.yml`:
@@ -40,7 +40,7 @@ Or reference it in another project's `docker-compose.yml`:
 ```yaml
 services:
   web-downloader:
-    image: ghcr.io/<your-github-username>/web-downloader:latest
+    image: ghcr.io/whispyy/local-link-downloader:latest
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -163,12 +163,13 @@ Edit `docker-compose.yml` and adjust:
 
 ```
 ├── src/                  # React frontend
-│   ├── App.tsx           # Main downloader UI (URL download + file upload)
+│   ├── App.tsx           # Main downloader UI (URL, upload, torrent tabs)
 │   ├── AdminPage.tsx     # /admin job list page
 │   ├── LoginPage.tsx     # Password prompt (when APP_PASSWORD is set)
 │   └── main.tsx          # Hash-based router
 ├── server/
-│   └── index.ts          # Express API server
+│   ├── app.ts            # Express app factory — all API endpoints and business logic
+│   └── index.ts          # Entry point — loads .env and starts the server
 ├── Dockerfile            # Multi-stage build
 ├── docker-compose.yml    # Compose with volume mounts
 ├── .env.example          # Environment variable template
@@ -185,9 +186,10 @@ Edit `docker-compose.yml` and adjust:
 | `GET` | `/api/config` | Returns configured folder keys and allowed extensions |
 | `POST` | `/api/download` | Start a URL download job (`{ url, folderKey, filenameOverride? }`) |
 | `POST` | `/api/upload` | Upload a file directly from the browser (`multipart/form-data`: `file`, `folderKey`, `filenameOverride?`) |
+| `POST` | `/api/torrent` | Start a torrent — JSON `{ magnet, folderKey }` for magnet links, or `multipart/form-data` with a `torrent` file and `folderKey` |
 | `GET` | `/api/jobs` | List all jobs, sorted newest first |
-| `GET` | `/api/status/:jobId` | Get status of a specific job (includes `downloaded_bytes` / `total_bytes`) |
-| `DELETE` | `/api/jobs/:jobId` | Cancel a queued or in-progress download and remove any partial file |
+| `GET` | `/api/status/:jobId` | Get status of a specific job (includes `downloaded_bytes`, `total_bytes`, `peers`, `download_speed` for torrents) |
+| `DELETE` | `/api/jobs/:jobId` | Cancel a queued or in-progress job; removes partial files for HTTP downloads, stops the torrent for torrent jobs |
 
 All endpoints except `POST /api/auth` require a `Authorization: Bearer <token>` header when `APP_PASSWORD` is set.
 
@@ -197,6 +199,8 @@ All endpoints except `POST /api/auth` require a `Authorization: Bearer <token>` 
 
 - **Jobs are in-memory only.** They are lost when the container/server restarts. Downloaded files and `logs/downloads.log` persist via volume mounts. Jobs are automatically evicted from memory after 24 hours.
 - **Logs** are written to `LOG_DIR/downloads.log`. Mount `./logs:/app/logs` in Docker to keep them on the host.
-- **Cancellation** aborts the in-flight HTTP fetch and deletes any partial file on disk.
+- **Cancellation** aborts the in-flight HTTP fetch and deletes any partial file on disk. For torrent jobs, the torrent is stopped but partially-downloaded files are kept.
 - **Upload size limit** is enforced server-side by `MAX_UPLOAD_SIZE` (default `10gb`). Multer rejects oversized uploads before they are written to disk.
-- The server blocks downloads to internal/private IP ranges to prevent SSRF. Redirects are followed — see security notes in the code if you need stricter controls.
+- **Torrents** are downloaded to a subfolder named after the torrent inside the chosen destination folder. Multi-file torrents are fully supported. The extension allow-list (`ALLOWED_EXTENSIONS`) does not apply to torrent jobs.
+- **Torrent client** is initialised lazily on the first torrent request and shared across all jobs. It binds to a random UDP port for BitTorrent traffic — make sure your firewall/router allows outbound UDP if you are behind NAT.
+- The server blocks HTTP downloads to internal/private IP ranges to prevent SSRF. Redirects are followed — see security notes in the code if you need stricter controls.
