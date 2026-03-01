@@ -189,6 +189,10 @@ async function downloadFile(
 export function buildApp() {
   const app = express();
 
+  // Trust the first proxy hop so express-rate-limit can read X-Forwarded-For
+  // correctly when running behind nginx / Traefik / Caddy etc.
+  app.set('trust proxy', 1);
+
   // Per-instance state (isolated between test suites)
   const jobs = new Map<string, DownloadJob>();
   const sessions = new Map<string, number>();
