@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud } from 'lucide-react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet } from 'lucide-react';
 import { formatBytes } from './utils';
 
 interface Config {
@@ -9,12 +9,15 @@ interface Config {
 
 interface DownloadJob {
   id: string;
-  status: 'queued' | 'downloading' | 'done' | 'error';
+  status: 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
   message?: string;
   filename?: string;
   folder_key?: string;
   total_bytes?: number;
   downloaded_bytes?: number;
+  type?: 'http' | 'torrent';
+  peers?: number;
+  download_speed?: number;
 }
 
 interface AppProps {
@@ -23,7 +26,7 @@ interface AppProps {
   authEnabled: boolean;
 }
 
-type Mode = 'url' | 'upload';
+type Mode = 'url' | 'upload' | 'torrent';
 
 function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [config, setConfig] = useState<Config>({ folders: [], allowedExtensions: [] });
@@ -38,6 +41,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [uploadFilenameOverride, setUploadFilenameOverride] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Torrent mode state
+  const [magnetUrl, setMagnetUrl] = useState('');
+  const [torrentFile, setTorrentFile] = useState<File | null>(null);
+  const [isDraggingTorrent, setIsDraggingTorrent] = useState(false);
+  const torrentInputRef = useRef<HTMLInputElement>(null);
 
   // Shared state
   const [folderKey, setFolderKey] = useState('');
@@ -56,7 +65,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       const interval = setInterval(() => pollStatus(currentJob.id), 1000);
       return () => clearInterval(interval);
     }
-  }, [currentJob]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentJob?.id, currentJob?.status]);
 
   const fetchConfig = async () => {
     try {
@@ -131,6 +141,39 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     }
   };
 
+  // ── Torrent submit ──────────────────────────────────────────────────────────
+  const handleTorrentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magnetUrl && !torrentFile) return;
+    setIsSubmitting(true);
+    try {
+      let response: Response;
+      if (torrentFile) {
+        const formData = new FormData();
+        formData.append('torrent', torrentFile);
+        formData.append('folderKey', folderKey);
+        response = await fetch('/api/torrent', {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+        });
+      } else {
+        response = await fetch('/api/torrent', {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ magnet: magnetUrl, folderKey }),
+        });
+      }
+      if (response.status === 401) { onUnauthorized(); return; }
+      const data = await response.json();
+      setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start torrent' });
+    } catch (error) {
+      setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ── Drag-and-drop handlers ──────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -161,6 +204,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       case 'queued':      return <Clock className="w-5 h-5 text-blue-500" />;
       case 'downloading': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
       case 'done':        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'cancelled':   return <XCircle className="w-5 h-5 text-slate-400" />;
       case 'error':       return <XCircle className="w-5 h-5 text-red-500" />;
     }
   };
@@ -169,8 +213,9 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     if (!currentJob) return null;
     switch (currentJob.status) {
       case 'queued':      return 'Queued';
-      case 'downloading': return 'Downloading...';
+      case 'downloading': return currentJob.type === 'torrent' ? 'Downloading torrent...' : 'Downloading...';
       case 'done':        return mode === 'upload' ? 'Upload complete' : 'Download complete';
+      case 'cancelled':   return 'Cancelled';
       case 'error':       return 'Error';
     }
   };
@@ -181,7 +226,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setFilenameOverride('');
     setSelectedFile(null);
     setUploadFilenameOverride('');
+    setMagnetUrl('');
+    setTorrentFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (torrentInputRef.current) torrentInputRef.current.value = '';
   };
 
   return (
@@ -234,6 +282,16 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             >
               <Upload className="w-4 h-4" />
               Upload File
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('torrent'); handleReset(); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+                mode === 'torrent' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Magnet className="w-4 h-4" />
+              Torrent
             </button>
           </div>
 
@@ -352,6 +410,90 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             </form>
           )}
 
+          {/* ── Torrent mode ── */}
+          {mode === 'torrent' && (
+            <form onSubmit={handleTorrentSubmit} className="space-y-5">
+              {/* Magnet link input */}
+              <div>
+                <label htmlFor="magnet" className="block text-sm font-medium text-slate-700 mb-2">Magnet Link</label>
+                <input
+                  id="magnet"
+                  type="text"
+                  value={magnetUrl}
+                  onChange={(e) => { setMagnetUrl(e.target.value); if (e.target.value) setTorrentFile(null); }}
+                  placeholder="magnet:?xt=urn:btih:..."
+                  disabled={!!torrentFile}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition disabled:bg-slate-50 disabled:text-slate-400"
+                />
+              </div>
+
+              {/* Or divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-xs text-slate-400 font-medium">OR</span>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+
+              {/* .torrent file drop zone */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">.torrent File</label>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); if (!magnetUrl) setIsDraggingTorrent(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDraggingTorrent(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingTorrent(false);
+                    if (magnetUrl) return;
+                    const file = e.dataTransfer.files[0];
+                    if (file) setTorrentFile(file);
+                  }}
+                  onClick={() => { if (!magnetUrl) torrentInputRef.current?.click(); }}
+                  className={`relative flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 transition ${
+                    magnetUrl
+                      ? 'border-slate-200 bg-slate-50 opacity-40 cursor-not-allowed'
+                      : isDraggingTorrent
+                      ? 'border-slate-500 bg-slate-50 cursor-pointer'
+                      : torrentFile
+                      ? 'border-green-400 bg-green-50 cursor-pointer'
+                      : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50 cursor-pointer'
+                  }`}
+                >
+                  <input
+                    ref={torrentInputRef}
+                    type="file"
+                    accept=".torrent"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) { setTorrentFile(f); setMagnetUrl(''); } }}
+                  />
+                  {torrentFile ? (
+                    <>
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                      <p className="text-sm font-medium text-slate-800 break-all text-center">{torrentFile.name}</p>
+                      <p className="text-xs text-slate-400">Click or drop to replace</p>
+                    </>
+                  ) : (
+                    <>
+                      <Magnet className={`w-7 h-7 ${isDraggingTorrent ? 'text-slate-600' : 'text-slate-400'}`} />
+                      <p className="text-sm text-slate-500">Drop a <code className="bg-slate-100 px-1 rounded">.torrent</code> file here or click to browse</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+
+              <button
+                type="submit"
+                disabled={isSubmitting || (!magnetUrl && !torrentFile) || !folderKey}
+                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              >
+                {isSubmitting
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</>
+                  : <><Magnet className="w-4 h-4" />Start Torrent</>}
+              </button>
+            </form>
+          )}
+
           {/* Status panel */}
           {currentJob && (
             <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
@@ -384,6 +526,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   ) : null}
                 </div>
               )}
+              {currentJob.status === 'downloading' && currentJob.type === 'torrent' && (
+                <p className="text-xs text-slate-500 ml-8 mt-1">
+                  {currentJob.peers ?? 0} {(currentJob.peers ?? 0) === 1 ? 'peer' : 'peers'}
+                  {currentJob.download_speed ? ` · ${formatBytes(currentJob.download_speed)}/s` : ''}
+                </p>
+              )}
               {currentJob.status === 'done' && currentJob.total_bytes != null && (
                 <p className="text-xs text-slate-500 ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
               )}
@@ -397,9 +545,9 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   <span className="text-slate-500">{currentJob.folder_key}</span>
                 </p>
               )}
-              {(currentJob.status === 'done' || currentJob.status === 'error') && (
+              {(currentJob.status === 'done' || currentJob.status === 'error' || currentJob.status === 'cancelled') && (
                 <button onClick={handleReset} className="mt-3 ml-8 text-sm text-slate-600 hover:text-slate-800 underline">
-                  {mode === 'upload' ? 'Upload another file' : 'Start new download'}
+                  {mode === 'upload' ? 'Upload another file' : mode === 'torrent' ? 'Start new torrent' : 'Start new download'}
                 </button>
               )}
             </div>
