@@ -307,8 +307,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 {selectedFile ? (
                   <>
                     <CheckCircle className="w-8 h-8 text-green-500" />
-                    <div className="text-center">
-                      <p className="font-medium text-slate-800">{selectedFile.name}</p>
+                    <div className="text-center w-full min-w-0">
+                      <p className="font-medium text-slate-800 break-all">{selectedFile.name}</p>
                       <p className="text-sm text-slate-500">{formatBytes(selectedFile.size)}</p>
                     </div>
                     <p className="text-xs text-slate-400">Click or drop to replace</p>
