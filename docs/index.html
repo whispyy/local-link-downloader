@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Link Downloader — Self-hosted file download manager</title>
+  <meta name="description" content="A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents — all saved to folders on your machine." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    .gradient-text {
+      background: linear-gradient(135deg, #60a5fa 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-bg {
+      background:
+        radial-gradient(ellipse at 65% 0%, rgba(99,102,241,0.18) 0%, transparent 55%),
+        radial-gradient(ellipse at 5% 80%, rgba(59,130,246,0.12) 0%, transparent 50%);
+    }
+    .copy-btn { transition: all 0.15s ease; }
+    .copy-btn:active { transform: scale(0.93); }
+    pre { tab-size: 2; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased">
+
+  <!-- NAV -->
+  <nav class="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-5 h-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span class="font-semibold text-slate-100 text-sm">Local Link Downloader</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-6 text-sm text-slate-400">
+        <a href="#features" class="hover:text-slate-100 transition-colors">Features</a>
+        <a href="#quickstart" class="hover:text-slate-100 transition-colors">Quick Start</a>
+        <a href="#config" class="hover:text-slate-100 transition-colors">Config</a>
+        <a href="https://github.com/whispyy/local-link-downloader" target="_blank" rel="noopener"
+           class="flex items-center gap-1.5 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors border border-slate-700">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero-bg pt-36 pb-28 px-4 sm:px-6 text-center">
+    <div class="max-w-4xl mx-auto">
+      <div class="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 text-xs text-blue-400 mb-8 font-medium tracking-wide">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+        Self-hosted &nbsp;·&nbsp; Docker &nbsp;·&nbsp; Open Source
+      </div>
+
+      <div class="flex justify-center mb-7">
+        <div class="w-20 h-20 bg-slate-800/80 rounded-2xl flex items-center justify-center border border-slate-700 shadow-2xl ring-1 ring-blue-500/10">
+          <svg class="w-10 h-10 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+      </div>
+
+      <h1 class="text-5xl sm:text-6xl font-extrabold tracking-tight mb-6 leading-tight">
+        <span class="gradient-text">Local Link Downloader</span>
+      </h1>
+      <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents —
+        all saved to folders on your machine.
+      </p>
+
+      <!-- Pull command -->
+      <div class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl px-5 py-3.5 max-w-xl mx-auto mb-10 font-mono text-sm shadow-xl">
+        <span class="text-slate-600 select-none flex-shrink-0">$</span>
+        <span class="text-green-400 flex-1 text-left truncate">docker pull ghcr.io/whispyy/local-link-downloader:latest</span>
+        <button id="hero-copy" onclick="copyHero()" class="copy-btn text-slate-500 hover:text-slate-200 transition-colors flex-shrink-0 ml-1 p-1 rounded" title="Copy command">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+
+      <!-- CTAs -->
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <a href="https://github.com/whispyy/local-link-downloader" target="_blank" rel="noopener"
+           class="flex items-center gap-2 bg-slate-100 text-slate-900 font-semibold px-6 py-3 rounded-xl hover:bg-white transition-colors shadow-lg">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+        <a href="https://github.com/whispyy/local-link-downloader/pkgs/container/local-link-downloader" target="_blank" rel="noopener"
+           class="flex items-center gap-2 bg-slate-800 text-slate-100 font-semibold px-6 py-3 rounded-xl hover:bg-slate-700 transition-colors border border-slate-700 shadow-lg">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          Container Registry
+        </a>
+        <a href="#quickstart" class="font-semibold text-blue-400 hover:text-blue-300 px-5 py-3 rounded-xl transition-colors">
+          Quick Start →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="py-24 px-4 sm:px-6 bg-slate-900/40">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-3">Everything you need</h2>
+      <p class="text-slate-400 text-center mb-16 max-w-lg mx-auto">
+        Deploy once on your homelab or NAS. Download from anywhere, any format.
+      </p>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-blue-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-blue-500/10">
+            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Download from URL</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Paste any HTTP/HTTPS URL. The server fetches the file server-side and saves it directly to your configured folder.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-violet-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-violet-500/10">
+            <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Local File Upload</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Drag-and-drop or browse to upload files directly from your browser. Configurable size limit up to <code class="text-violet-400 text-xs">10gb</code> by default.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-emerald-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-emerald-500/10">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Torrent Downloads</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Paste a magnet link or drop a <code class="text-emerald-400 text-xs">.torrent</code> file. Supports multi-file torrents with live speed and peer count display.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-amber-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-amber-500/10">
+            <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Live Progress</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Real-time progress bar with bytes downloaded, total size, and percentage. No page reload needed — auto-refreshes in place.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-rose-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-rose-500/10">
+            <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Multiple Destinations</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Configure any number of named folders via <code class="text-rose-400 text-xs">DOWNLOAD_FOLDERS</code>. Map each to a volume on your NAS or local disk.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-cyan-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-cyan-500/10">
+            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Optional Auth + Admin</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Set <code class="text-cyan-400 text-xs">APP_PASSWORD</code> for 8-hour sessions. The <code class="text-cyan-400 text-xs">/admin</code> page shows all jobs with live status and cancel controls.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- QUICK START -->
+  <section id="quickstart" class="py-24 px-4 sm:px-6">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-3">Quick Start</h2>
+      <p class="text-slate-400 text-center mb-16 max-w-md mx-auto">
+        No build step. Add one service to any existing
+        <code class="text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded text-sm">docker-compose.yml</code>.
+      </p>
+
+      <!-- Step 1 -->
+      <div class="mb-8">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">1</div>
+          <h3 class="font-semibold text-slate-200">Pull the image</h3>
+        </div>
+        <div class="relative group">
+          <pre class="bg-slate-900 border border-slate-700 rounded-xl p-4 font-mono text-sm overflow-x-auto"><code><span class="text-slate-600">$</span> <span class="text-green-400">docker pull ghcr.io/whispyy/local-link-downloader:latest</span></code></pre>
+          <button onclick="copyCode(this)" data-code="docker pull ghcr.io/whispyy/local-link-downloader:latest"
+                  class="copy-btn absolute top-3 right-3 bg-slate-700/80 hover:bg-slate-600 text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all opacity-0 group-hover:opacity-100">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="mb-8">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">2</div>
+          <h3 class="font-semibold text-slate-200">Add to your <code class="font-mono text-blue-300 text-sm">docker-compose.yml</code></h3>
+        </div>
+        <div class="relative group">
+          <pre class="bg-slate-900 border border-slate-700 rounded-xl p-4 font-mono text-sm overflow-x-auto leading-6"><code><span class="text-blue-300">services</span><span class="text-slate-300">:</span>
+  <span class="text-blue-300">web-downloader</span><span class="text-slate-300">:</span>
+    <span class="text-violet-300">image</span><span class="text-slate-300">: ghcr.io/whispyy/local-link-downloader:latest</span>
+    <span class="text-violet-300">restart</span><span class="text-slate-300">: unless-stopped</span>
+    <span class="text-violet-300">ports</span><span class="text-slate-300">:</span>
+      <span class="text-slate-400">- "3000:3000"</span>
+    <span class="text-violet-300">environment</span><span class="text-slate-300">:</span>
+      <span class="text-emerald-400">DOWNLOAD_FOLDERS</span><span class="text-slate-300">: "images:/downloads/images;videos:/downloads/videos"</span>
+      <span class="text-emerald-400">ALLOWED_EXTENSIONS</span><span class="text-slate-300">: ".jpg,.png,.gif,.zip,.mp4,.pdf"</span>
+      <span class="text-emerald-400">APP_PASSWORD</span><span class="text-slate-300">: "your_secret_password"</span>
+    <span class="text-violet-300">volumes</span><span class="text-slate-300">:</span>
+      <span class="text-slate-400">- /mnt/nas/images:/downloads/images</span>
+      <span class="text-slate-400">- /mnt/nas/videos:/downloads/videos</span>
+      <span class="text-slate-400">- ./logs/web-downloader:/app/logs</span></code></pre>
+          <button onclick="copyCode(this)"
+                  data-code="services:
+  web-downloader:
+    image: ghcr.io/whispyy/local-link-downloader:latest
+    restart: unless-stopped
+    ports:
+      - &quot;3000:3000&quot;
+    environment:
+      DOWNLOAD_FOLDERS: &quot;images:/downloads/images;videos:/downloads/videos&quot;
+      ALLOWED_EXTENSIONS: &quot;.jpg,.png,.gif,.zip,.mp4,.pdf&quot;
+      APP_PASSWORD: &quot;your_secret_password&quot;
+    volumes:
+      - /mnt/nas/images:/downloads/images
+      - /mnt/nas/videos:/downloads/videos
+      - ./logs/web-downloader:/app/logs"
+                  class="copy-btn absolute top-3 right-3 bg-slate-700/80 hover:bg-slate-600 text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all opacity-0 group-hover:opacity-100">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">3</div>
+          <h3 class="font-semibold text-slate-200">Start the stack</h3>
+        </div>
+        <div class="relative group">
+          <pre class="bg-slate-900 border border-slate-700 rounded-xl p-4 font-mono text-sm overflow-x-auto"><code><span class="text-slate-600">$</span> <span class="text-green-400">docker compose up -d</span></code></pre>
+          <button onclick="copyCode(this)" data-code="docker compose up -d"
+                  class="copy-btn absolute top-3 right-3 bg-slate-700/80 hover:bg-slate-600 text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all opacity-0 group-hover:opacity-100">
+            Copy
+          </button>
+        </div>
+        <p class="text-slate-400 text-sm mt-3 ml-1">
+          Open <code class="text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded text-xs">http://localhost:3000</code> — done!
+        </p>
+      </div>
+
+      <!-- Update tip -->
+      <div class="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5">
+        <p class="text-sm text-slate-400 mb-3">
+          <span class="text-slate-200 font-medium">Updating</span> — pull and restart in one line:
+        </p>
+        <div class="relative group">
+          <pre class="bg-slate-900 border border-slate-700/50 rounded-lg p-3 font-mono text-sm overflow-x-auto"><code><span class="text-slate-600">$</span> <span class="text-green-400">docker compose pull web-downloader &amp;&amp; docker compose up -d web-downloader</span></code></pre>
+          <button onclick="copyCode(this)" data-code="docker compose pull web-downloader && docker compose up -d web-downloader"
+                  class="copy-btn absolute top-2.5 right-2.5 bg-slate-700/80 hover:bg-slate-600 text-slate-400 hover:text-white px-2.5 py-1 rounded-lg text-xs font-medium transition-all opacity-0 group-hover:opacity-100">
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="config" class="py-24 px-4 sm:px-6 bg-slate-900/40">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-3">Configuration</h2>
+      <p class="text-slate-400 text-center mb-16 max-w-md mx-auto">
+        All settings are environment variables. No config files, no YAML schemas.
+      </p>
+
+      <div class="rounded-2xl border border-slate-700/60 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-800/60 border-b border-slate-700/60">
+                <th class="text-left py-3.5 px-5 font-semibold text-slate-300 whitespace-nowrap">Variable</th>
+                <th class="text-left py-3.5 px-5 font-semibold text-slate-300 whitespace-nowrap">Default</th>
+                <th class="text-left py-3.5 px-5 font-semibold text-slate-300">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">DOWNLOAD_FOLDERS</code></td>
+                <td class="py-3.5 px-5 text-slate-600 font-mono text-xs">—</td>
+                <td class="py-3.5 px-5 text-slate-400">Semicolon-separated <code class="text-slate-300 text-xs">key:/path</code> pairs. E.g. <code class="text-slate-300 text-xs">images:/mnt/img;tmp:/mnt/tmp</code></td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">ALLOWED_EXTENSIONS</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">all</td>
+                <td class="py-3.5 px-5 text-slate-400">Comma-separated list of permitted extensions. E.g. <code class="text-slate-300 text-xs">.jpg,.png,.mp4</code>. Does not apply to torrents.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">APP_PASSWORD</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">unset</td>
+                <td class="py-3.5 px-5 text-slate-400">When set, requires a password prompt. Sessions last 8 hours.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">MAX_UPLOAD_SIZE</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">10gb</td>
+                <td class="py-3.5 px-5 text-slate-400">Max size for direct browser uploads. Accepts <code class="text-slate-300 text-xs">b</code>, <code class="text-slate-300 text-xs">kb</code>, <code class="text-slate-300 text-xs">mb</code>, <code class="text-slate-300 text-xs">gb</code>.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">API_PORT</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">3000</td>
+                <td class="py-3.5 px-5 text-slate-400">Port the Express server listens on inside Docker.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">LOG_DIR</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">./logs</td>
+                <td class="py-3.5 px-5 text-slate-400">Directory where <code class="text-slate-300 text-xs">downloads.log</code> is written.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOLUME MAPPING -->
+  <section class="py-24 px-4 sm:px-6">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-3">Volume Mapping</h2>
+      <p class="text-slate-400 text-center mb-12 max-w-md mx-auto">
+        How files land on your host machine rather than inside the container.
+      </p>
+
+      <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-8">
+        <p class="text-slate-300 mb-6 leading-relaxed">
+          Files are downloaded <strong class="text-white">inside the container</strong> to paths defined in
+          <code class="text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded text-sm">DOWNLOAD_FOLDERS</code>.
+          Bind-mount a host directory to the same container path to make files appear on your machine.
+        </p>
+
+        <div class="bg-slate-900 rounded-xl p-5 border border-slate-700/60 mb-5 font-mono text-sm leading-6">
+          <p class="text-slate-600 text-xs mb-3"># The container-path is the bridge — it must match on both sides</p>
+          <div><span class="text-violet-300">DOWNLOAD_FOLDERS</span><span class="text-slate-300">=images:<span class="text-amber-400">/downloads/images</span></span></div>
+          <div class="text-slate-300">volumes:</div>
+          <div class="ml-4 text-slate-300">- /mnt/nas/images:<span class="text-amber-400">/downloads/images</span></div>
+        </div>
+
+        <div class="flex items-start gap-3 bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
+          <svg class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <p class="text-amber-300/80 text-sm">The <span class="text-amber-300 font-medium">container path</span> (the right side of the colon in <code class="text-xs">volumes:</code>) must exactly match what you set in <code class="text-xs">DOWNLOAD_FOLDERS</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- IMAGE TAGS -->
+  <section class="py-16 px-4 sm:px-6 bg-slate-900/40">
+    <div class="max-w-3xl mx-auto text-center">
+      <h2 class="text-2xl font-bold mb-3">Published Image Tags</h2>
+      <p class="text-slate-400 mb-10">Automatically built and pushed on every commit and version tag.</p>
+
+      <div class="grid sm:grid-cols-2 gap-4 text-left">
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-5">
+          <code class="text-green-400 text-sm font-mono">:latest</code>
+          <p class="text-slate-400 text-sm mt-1.5">Published on every push to <code class="text-slate-300 text-xs">main</code>. Always points to the newest build.</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-5">
+          <code class="text-green-400 text-sm font-mono">:v1.2.3</code>
+          <p class="text-slate-400 text-sm mt-1.5">Immutable version tag. Pin to this in production for stable deployments.</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-5">
+          <code class="text-green-400 text-sm font-mono">:v1.2</code>
+          <p class="text-slate-400 text-sm mt-1.5">Minor-version tag — always points to the latest patch of that minor.</p>
+        </div>
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-xl p-5">
+          <code class="text-green-400 text-sm font-mono">:sha-abc1234</code>
+          <p class="text-slate-400 text-sm mt-1.5">Unique short-SHA tag for every build. Useful for debugging exact versions.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-800/80 py-12 px-4 sm:px-6">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-2.5 text-slate-500 text-sm">
+        <svg class="w-4 h-4 text-blue-500/60" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Local Link Downloader &mdash; MIT License
+      </div>
+      <div class="flex items-center gap-5 text-sm">
+        <a href="https://github.com/whispyy/local-link-downloader" target="_blank" rel="noopener"
+           class="text-slate-500 hover:text-slate-200 transition-colors flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/whispyy/local-link-downloader/pkgs/container/local-link-downloader" target="_blank" rel="noopener"
+           class="text-slate-500 hover:text-slate-200 transition-colors">GHCR</a>
+        <a href="https://github.com/whispyy/local-link-downloader/issues" target="_blank" rel="noopener"
+           class="text-slate-500 hover:text-slate-200 transition-colors">Issues</a>
+        <a href="https://github.com/whispyy/local-link-downloader/blob/main/README.md" target="_blank" rel="noopener"
+           class="text-slate-500 hover:text-slate-200 transition-colors">README</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function copyCode(btn) {
+      const code = btn.dataset.code;
+      navigator.clipboard.writeText(code).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('bg-green-700/80', 'text-green-100');
+        btn.classList.remove('opacity-0');
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove('bg-green-700/80', 'text-green-100');
+        }, 2000);
+      });
+    }
+
+    function copyHero() {
+      const text = 'docker pull ghcr.io/whispyy/local-link-downloader:latest';
+      const btn = document.getElementById('hero-copy');
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = `<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+        setTimeout(() => {
+          btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
