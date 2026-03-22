@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet } from 'lucide-react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, LogOut } from 'lucide-react';
 import { formatBytes } from './utils';
 
 interface Config {
@@ -237,25 +237,27 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       <div className="w-full max-w-2xl">
         <div className="bg-white rounded-lg shadow-lg p-5 sm:p-8">
 
-          {/* Header */}
-          <div className="flex items-start justify-between mb-6 gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <Download className="w-7 h-7 shrink-0 text-slate-700" />
-              <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 leading-tight">File Manager</h1>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <a href="#/browse" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
-                Browse
-              </a>
-              <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
-                Admin
-              </a>
+          {/* Nav bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-800 transition">File Manager</a>
+            <div className="flex items-center gap-3">
+              <nav className="flex items-center gap-1 text-sm">
+                <a href="#" className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-medium">Download</a>
+                <a href="#/browse" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Browse</a>
+                <a href="#/admin" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Admin</a>
+              </nav>
               {authEnabled && (
-                <button onClick={onUnauthorized} className="text-sm text-slate-400 hover:text-slate-700 transition whitespace-nowrap" title="Sign out">
-                  Sign out
+                <button onClick={onUnauthorized} className="text-slate-400 hover:text-slate-700 transition" title="Sign out">
+                  <LogOut className="w-4 h-4" />
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Page title */}
+          <div className="flex items-center gap-3 mb-6">
+            <Download className="w-6 h-6 shrink-0 text-slate-700" />
+            <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Download</h1>
           </div>
 
           {configError && (

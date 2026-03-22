@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { formatBytes, getMediaType } from './utils';
 
 interface BrowseFile {
@@ -124,30 +124,27 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        {/* Nav bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-800 transition">File Manager</a>
           <div className="flex items-center gap-3">
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); window.location.hash = ''; }}
-              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition shrink-0"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </a>
-            <Folder className="w-6 h-6 text-slate-700" />
-            <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Browse Files</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
-              Admin
-            </a>
+            <nav className="flex items-center gap-1 text-sm">
+              <a href="#" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Download</a>
+              <a href="#/browse" className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-medium">Browse</a>
+              <a href="#/admin" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Admin</a>
+            </nav>
             {authEnabled && (
-              <button onClick={onUnauthorized} className="text-sm text-slate-400 hover:text-slate-700 transition whitespace-nowrap" title="Sign out">
-                Sign out
+              <button onClick={onUnauthorized} className="text-slate-400 hover:text-slate-700 transition" title="Sign out">
+                <LogOut className="w-4 h-4" />
               </button>
             )}
           </div>
+        </div>
+
+        {/* Page title */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <Folder className="w-6 h-6 shrink-0 text-slate-700" />
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Browse Files</h1>
         </div>
 
         {/* Folder selector */}
