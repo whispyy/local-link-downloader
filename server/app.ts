@@ -13,8 +13,8 @@ import cors from 'cors';
 import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { existsSync, mkdirSync } from 'fs';
-import { writeFile, appendFile, unlink } from 'fs/promises';
+import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
+import { writeFile, appendFile, unlink, readdir, stat } from 'fs/promises';
 import path from 'path';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -734,6 +734,174 @@ export function buildApp() {
       peers: job.peers,
       download_speed: job.downloadSpeed,
     });
+  });
+
+  // ── MIME type map ──────────────────────────────────────────────────────────
+  const MIME_MAP: Record<string, string> = {
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+    '.aac': 'audio/aac',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.md': 'text/plain',
+    '.csv': 'text/plain',
+    '.log': 'text/plain',
+    '.json': 'application/json',
+    '.xml': 'text/xml',
+    '.yaml': 'text/plain',
+    '.yml': 'text/plain',
+    '.ini': 'text/plain',
+    '.conf': 'text/plain',
+    '.cfg': 'text/plain',
+    '.sh': 'text/plain',
+    '.py': 'text/plain',
+    '.js': 'text/plain',
+    '.ts': 'text/plain',
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.toml': 'text/plain',
+    '.nfo': 'text/plain',
+    '.srt': 'text/plain',
+    '.sub': 'text/plain',
+    '.ass': 'text/plain',
+  };
+
+  // ── Auth middleware that also accepts ?token= query param ──────────────────
+  function authMiddlewareWithQuery(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (!isAuthEnabled()) { next(); return; }
+    // Try Authorization header first
+    const authHeader = req.headers['authorization'] || '';
+    const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (isValidSession(sessions, headerToken)) { next(); return; }
+    // Fall back to query param (for <video>/<audio>/<img> tags)
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+    if (isValidSession(sessions, queryToken)) { next(); return; }
+    res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── GET /api/browse/:folderKey ────────────────────────────────────────────
+  app.get('/api/browse/:folderKey', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    if (!existsSync(folderPath)) {
+      res.json({ files: [], total: 0 });
+      return;
+    }
+
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+
+    try {
+      const entries = await readdir(folderPath, { withFileTypes: true });
+      const fileEntries = entries.filter(e => e.isFile());
+
+      // Gather stats for all files
+      const fileInfos = await Promise.all(
+        fileEntries.map(async (entry) => {
+          const filePath = path.join(folderPath, entry.name);
+          const fileStat = await stat(filePath);
+          return {
+            name: entry.name,
+            size: fileStat.size,
+            modifiedAt: fileStat.mtime.toISOString(),
+          };
+        })
+      );
+
+      // Sort by modified date descending
+      fileInfos.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+
+      const total = fileInfos.length;
+      const offset = (page - 1) * limit;
+      const paged = fileInfos.slice(offset, offset + limit);
+
+      res.json({ files: paged, total, page, limit });
+    } catch (err) {
+      log('ERROR', 'Browse listing failed', { folderKey, error: String(err) });
+      res.status(500).json({ error: 'Failed to list files' });
+    }
+  });
+
+  // ── GET /api/browse/:folderKey/:filename ──────────────────────────────────
+  app.get('/api/browse/:folderKey/:filename', authMiddlewareWithQuery, (req, res) => {
+    const { folderKey, filename } = req.params;
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    const sanitized = sanitizeFilename(filename);
+    if (!sanitized) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const fullPath = path.join(folderPath, sanitized);
+    const resolvedFolder = path.resolve(folderPath);
+    const resolvedFull = path.resolve(fullPath);
+    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+
+    if (!existsSync(fullPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const fileStat = statSync(fullPath);
+    const ext = path.extname(sanitized).toLowerCase();
+    const contentType = MIME_MAP[ext] || 'application/octet-stream';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', 'inline');
+
+    const rangeHeader = req.headers.range;
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileStat.size - 1;
+
+        if (start >= fileStat.size || end >= fileStat.size || start > end) {
+          res.status(416).setHeader('Content-Range', `bytes */${fileStat.size}`).end();
+          return;
+        }
+
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileStat.size}`);
+        res.setHeader('Content-Length', end - start + 1);
+        res.setHeader('Accept-Ranges', 'bytes');
+        createReadStream(fullPath, { start, end }).pipe(res);
+        return;
+      }
+    }
+
+    res.setHeader('Content-Length', fileStat.size);
+    res.setHeader('Accept-Ranges', 'bytes');
+    createReadStream(fullPath).pipe(res);
   });
 
   // ── Static files (production only) ─────────────────────────────────────────

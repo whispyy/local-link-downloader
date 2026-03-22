@@ -4,3 +4,57 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
+
+export type MediaType = 'video' | 'audio' | 'image' | 'text' | null;
+
+const MEDIA_EXTENSIONS: Record<string, MediaType> = {
+  '.mp4': 'video',
+  '.webm': 'video',
+  '.mkv': 'video',
+  '.avi': 'video',
+  '.mov': 'video',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.ogg': 'audio',
+  '.flac': 'audio',
+  '.aac': 'audio',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.png': 'image',
+  '.gif': 'image',
+  '.webp': 'image',
+  '.svg': 'image',
+  '.bmp': 'image',
+  '.txt': 'text',
+  '.md': 'text',
+  '.csv': 'text',
+  '.log': 'text',
+  '.json': 'text',
+  '.xml': 'text',
+  '.yaml': 'text',
+  '.yml': 'text',
+  '.ini': 'text',
+  '.conf': 'text',
+  '.cfg': 'text',
+  '.sh': 'text',
+  '.bash': 'text',
+  '.zsh': 'text',
+  '.py': 'text',
+  '.js': 'text',
+  '.ts': 'text',
+  '.html': 'text',
+  '.css': 'text',
+  '.env': 'text',
+  '.toml': 'text',
+  '.nfo': 'text',
+  '.srt': 'text',
+  '.sub': 'text',
+  '.ass': 'text',
+};
+
+export function getMediaType(filename: string): MediaType {
+  const dot = filename.lastIndexOf('.');
+  if (dot === -1) return null;
+  const ext = filename.substring(dot).toLowerCase();
+  return MEDIA_EXTENSIONS[ext] ?? null;
+}

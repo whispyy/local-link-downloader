@@ -241,9 +241,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
           <div className="flex items-start justify-between mb-6 gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <Download className="w-7 h-7 shrink-0 text-slate-700" />
-              <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 leading-tight">File Downloader</h1>
+              <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 leading-tight">File Manager</h1>
             </div>
             <div className="flex items-center gap-3 shrink-0">
+              <a href="#/browse" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
+                Browse
+              </a>
               <a href="#/admin" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
                 Admin
               </a>

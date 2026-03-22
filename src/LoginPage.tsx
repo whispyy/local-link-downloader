@@ -46,7 +46,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
               <Lock className="w-6 h-6 text-slate-600" />
             </div>
-            <h1 className="text-xl font-semibold text-slate-800">Web Downloader</h1>
+            <h1 className="text-xl font-semibold text-slate-800">File Manager</h1>
             <p className="text-sm text-slate-500 mt-1">Enter your password to continue</p>
           </div>
 

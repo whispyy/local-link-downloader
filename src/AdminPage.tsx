@@ -193,6 +193,9 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
             <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Download Jobs</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <a href="#/browse" className="text-sm text-slate-400 hover:text-slate-700 transition underline underline-offset-2">
+              Browse
+            </a>
             {lastRefreshed && (
               <span className="text-xs text-slate-400 whitespace-nowrap">
                 Updated {lastRefreshed.toLocaleTimeString()}

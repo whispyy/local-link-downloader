@@ -20,6 +20,6 @@ const app = buildApp();
 
 app.listen(PORT, () => {
   const timestamp = new Date().toISOString();
-  process.stdout.write(`[${timestamp}] [INFO] Web Downloader API server running on port ${PORT}\n`);
+  process.stdout.write(`[${timestamp}] [INFO] Local Link Downloader API server running on port ${PORT}\n`);
   process.stdout.write(`[${timestamp}] [INFO] Log file: ${path.resolve(LOG_FILE)}\n`);
 });

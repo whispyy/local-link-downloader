@@ -2,6 +2,7 @@ import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import AdminPage from './AdminPage.tsx';
+import BrowsePage from './BrowsePage.tsx';
 import LoginPage from './LoginPage.tsx';
 import './index.css';
 
@@ -80,6 +81,10 @@ function Root() {
 
   if (hash === '#/admin') {
     return <><AdminPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+  }
+
+  if (hash === '#/browse') {
+    return <><BrowsePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
   return <><App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
