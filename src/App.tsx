@@ -236,7 +236,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       {/* Sticky nav bar */}
-      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light">
+      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
         <div className="max-w-2xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
           <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
           <div className="flex items-center gap-3">
