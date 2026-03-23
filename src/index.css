@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* PWA standalone: pad for the iOS status bar / notch */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .pwa-safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
 @layer base {
   :root {
     --color-bg-base: #f8fafc;
