@@ -1,5 +1,6 @@
 /**
  * Integration tests — GET /api/browse/:folderKey and GET /api/browse/:folderKey/:filename
+ *                      DELETE /api/browse/:folderKey/:filename
  *
  * Scenarios:
  *   B1  List files in a folder
@@ -12,10 +13,16 @@
  *   B8  Auth required when APP_PASSWORD is set
  *   B9  Empty folder returns empty list
  *   B10 Range request with invalid range returns 416
+ *   B11 Delete a file
+ *   B12 Delete non-existent file returns 404
+ *   B13 Delete with invalid folder key returns 400
+ *   B14 Delete with path traversal blocked
+ *   B15 Delete requires auth when APP_PASSWORD is set
+ *   B16 Delete a file with special characters in name
  */
 
 import request from 'supertest';
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { buildApp } from '../../server/app';
@@ -184,6 +191,84 @@ describe('GET /api/browse', () => {
   });
 });
 
+describe('DELETE /api/browse/:folderKey/:filename', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-delete-'));
+
+    writeFileSync(path.join(tmpDir, 'deleteme.txt'), 'goodbye');
+    writeFileSync(path.join(tmpDir, 'keep.txt'), 'stay');
+    writeFileSync(path.join(tmpDir, 'file with spaces.txt'), 'spaced');
+    writeFileSync(path.join(tmpDir, 'café.txt'), 'accented');
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B11 — deletes a file and removes it from disk', async () => {
+    const res = await request(app).delete('/api/browse/media/deleteme.txt');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'deleteme.txt'))).toBe(false);
+
+    // Other files are untouched
+    expect(existsSync(path.join(tmpDir, 'keep.txt'))).toBe(true);
+
+    // File no longer appears in listing
+    const list = await request(app).get('/api/browse/media');
+    const names = list.body.files.map((f: { name: string }) => f.name);
+    expect(names).not.toContain('deleteme.txt');
+    expect(names).toContain('keep.txt');
+  });
+
+  it('B12 — returns 404 for non-existent file', async () => {
+    const res = await request(app).delete('/api/browse/media/nope.txt');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('B13 — returns 400 for invalid folder key', async () => {
+    const res = await request(app).delete('/api/browse/nonexistent/deleteme.txt');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid folder key/i);
+  });
+
+  it('B14 — blocks path traversal', async () => {
+    const res = await request(app).delete('/api/browse/media/..%2F..%2Fetc%2Fpasswd');
+
+    expect([400, 404]).toContain(res.status);
+  });
+
+  it('B16 — deletes a file with spaces in name', async () => {
+    const res = await request(app).delete('/api/browse/media/file%20with%20spaces.txt');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'file with spaces.txt'))).toBe(false);
+  });
+
+  it('B16 — deletes a file with accented characters', async () => {
+    const res = await request(app).delete(`/api/browse/media/${encodeURIComponent('café.txt')}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'café.txt'))).toBe(false);
+  });
+});
+
 describe('GET /api/browse — auth required', () => {
   let tmpDir: string;
   let app: ReturnType<typeof buildApp>;
@@ -211,6 +296,11 @@ describe('GET /api/browse — auth required', () => {
 
   it('B8 — serving requires auth', async () => {
     const res = await request(app).get('/api/browse/files/test.txt');
+    expect(res.status).toBe(401);
+  });
+
+  it('B15 — deleting requires auth', async () => {
+    const res = await request(app).delete('/api/browse/files/test.txt');
     expect(res.status).toBe(401);
   });
 

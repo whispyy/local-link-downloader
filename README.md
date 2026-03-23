@@ -4,7 +4,8 @@ A self-hosted web UI for downloading files from URLs, uploading local files, or 
 
 - **Frontend** — React + Vite + Tailwind CSS
 - **Backend** — Express (TypeScript), runs on Node.js
-- **Admin page** — `/admin` (hash route `#/admin`) — live job list with status filter, progress display, and stop button
+- **Browse page** — `#/browse` — browse downloaded files with media preview (video, audio, image, text)
+- **Admin page** — `#/admin` — live job list with status filter, progress display, and stop button
 
 **Published image:** `ghcr.io/whispyy/local-link-downloader:latest`
 
@@ -22,7 +23,8 @@ A self-hosted web UI for downloading files from URLs, uploading local files, or 
 | **Multiple destination folders** | Configure any number of named folders via `DOWNLOAD_FOLDERS` |
 | **Extension allow-list** | Optionally restrict which file extensions are accepted (HTTP/upload only — does not apply to torrents) |
 | **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
-| **Admin job list** | `/admin` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
+| **Browse files** | `#/browse` page lists files in each folder with size, date, media preview (video/audio/image/text), direct download, and delete |
+| **Admin job list** | `#/admin` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
 | **Persistent logs** | Every download/upload/torrent is appended to `logs/downloads.log` |
 
 ---
@@ -165,6 +167,7 @@ Edit `docker-compose.yml` and adjust:
 ├── src/                  # React frontend
 │   ├── App.tsx           # Main downloader UI (URL, upload, torrent tabs)
 │   ├── AdminPage.tsx     # /admin job list page
+│   ├── BrowsePage.tsx    # /browse file browser with media preview
 │   ├── LoginPage.tsx     # Password prompt (when APP_PASSWORD is set)
 │   └── main.tsx          # Hash-based router
 ├── server/
@@ -189,6 +192,9 @@ Edit `docker-compose.yml` and adjust:
 | `POST` | `/api/torrent` | Start a torrent — JSON `{ magnet, folderKey }` for magnet links, or `multipart/form-data` with a `torrent` file and `folderKey` |
 | `GET` | `/api/jobs` | List all jobs, sorted newest first |
 | `GET` | `/api/status/:jobId` | Get status of a specific job (includes `downloaded_bytes`, `total_bytes`, `peers`, `download_speed` for torrents) |
+| `GET` | `/api/browse/:folderKey` | List files in a folder (paginated: `?page=1&limit=50`), returns `{ files, total }` |
+| `GET` | `/api/browse/:folderKey/:filename` | Serve/download a file (pass `?token=` for auth) |
+| `DELETE` | `/api/browse/:folderKey/:filename` | Delete a file from a folder |
 | `DELETE` | `/api/jobs/:jobId` | Cancel a queued or in-progress job; removes partial files for HTTP downloads, stops the torrent for torrent jobs |
 
 All endpoints except `POST /api/auth` require a `Authorization: Bearer <token>` header when `APP_PASSWORD` is set.

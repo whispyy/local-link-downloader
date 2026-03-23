@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, LogOut } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 import { formatBytes } from './utils';
 
 interface Config {
@@ -204,7 +205,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       case 'queued':      return <Clock className="w-5 h-5 text-blue-500" />;
       case 'downloading': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
       case 'done':        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'cancelled':   return <XCircle className="w-5 h-5 text-slate-400" />;
+      case 'cancelled':   return <XCircle className="w-5 h-5 text-th-text-faint" />;
       case 'error':       return <XCircle className="w-5 h-5 text-red-500" />;
     }
   };
@@ -233,21 +234,22 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-3 sm:p-4">
+    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to flex items-center justify-center p-3 sm:p-4">
       <div className="w-full max-w-2xl">
-        <div className="bg-white rounded-lg shadow-lg p-5 sm:p-8">
+        <div className="bg-th-bg rounded-lg shadow-lg p-5 sm:p-8">
 
           {/* Nav bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-            <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-800 transition">File Manager</a>
+            <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
             <div className="flex items-center gap-3">
               <nav className="flex items-center gap-1 text-sm">
-                <a href="#" className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-medium">Download</a>
-                <a href="#/browse" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Browse</a>
-                <a href="#/admin" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Admin</a>
+                <a href="#" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Download</a>
+                <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
+                <a href="#/admin" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Admin</a>
               </nav>
+              <ThemeToggle />
               {authEnabled && (
-                <button onClick={onUnauthorized} className="text-slate-400 hover:text-slate-700 transition" title="Sign out">
+                <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
                   <LogOut className="w-4 h-4" />
                 </button>
               )}
@@ -256,8 +258,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
           {/* Page title */}
           <div className="flex items-center gap-3 mb-6">
-            <Download className="w-6 h-6 shrink-0 text-slate-700" />
-            <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Download</h1>
+            <Download className="w-6 h-6 shrink-0 text-th-text-sub" />
+            <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Download</h1>
           </div>
 
           {configError && (
@@ -267,12 +269,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
           )}
 
           {/* Mode tabs */}
-          <div className="flex gap-1 mb-6 bg-slate-100 p-1 rounded-lg">
+          <div className="flex gap-1 mb-6 bg-th-bg-muted p-1 rounded-lg">
             <button
               type="button"
               onClick={() => { setMode('url'); handleReset(); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
-                mode === 'url' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                mode === 'url' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
               <Link className="w-4 h-4" />
@@ -282,7 +284,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               type="button"
               onClick={() => { setMode('upload'); handleReset(); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
-                mode === 'upload' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                mode === 'upload' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
               <Upload className="w-4 h-4" />
@@ -292,7 +294,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               type="button"
               onClick={() => { setMode('torrent'); handleReset(); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
-                mode === 'torrent' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                mode === 'torrent' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
               <Magnet className="w-4 h-4" />
@@ -304,7 +306,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
           {mode === 'url' && (
             <form onSubmit={handleUrlSubmit} className="space-y-5">
               <div>
-                <label htmlFor="url" className="block text-sm font-medium text-slate-700 mb-2">File URL</label>
+                <label htmlFor="url" className="block text-sm font-medium text-th-text-sub mb-2">File URL</label>
                 <input
                   id="url"
                   type="url"
@@ -312,15 +314,15 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   onChange={(e) => setUrl(e.target.value)}
                   required
                   placeholder="https://example.com/file.jpg"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
                 />
               </div>
 
               <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
 
               <div>
-                <label htmlFor="filename" className="block text-sm font-medium text-slate-700 mb-2">
-                  Filename Override <span className="text-slate-400 font-normal">(optional)</span>
+                <label htmlFor="filename" className="block text-sm font-medium text-th-text-sub mb-2">
+                  Filename Override <span className="text-th-text-faint font-normal">(optional)</span>
                 </label>
                 <input
                   id="filename"
@@ -328,7 +330,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   value={filenameOverride}
                   onChange={(e) => setFilenameOverride(e.target.value)}
                   placeholder="custom-name.jpg"
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
                 />
               </div>
 
@@ -337,7 +339,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               <button
                 type="submit"
                 disabled={isSubmitting || !url || !folderKey}
-                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+                className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
                 {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : <><Download className="w-4 h-4" />Download File</>}
               </button>
@@ -355,10 +357,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 onClick={() => fileInputRef.current?.click()}
                 className={`relative flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-lg p-8 cursor-pointer transition ${
                   isDragging
-                    ? 'border-slate-500 bg-slate-50'
+                    ? 'border-th-border bg-th-bg-alt'
                     : selectedFile
                     ? 'border-green-400 bg-green-50'
-                    : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
+                    : 'border-th-border hover:border-th-border hover:bg-th-bg-alt'
                 }`}
               >
                 <input
@@ -371,17 +373,17 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   <>
                     <CheckCircle className="w-8 h-8 text-green-500" />
                     <div className="text-center w-full min-w-0">
-                      <p className="font-medium text-slate-800 break-all">{selectedFile.name}</p>
-                      <p className="text-sm text-slate-500">{formatBytes(selectedFile.size)}</p>
+                      <p className="font-medium text-th-text break-all">{selectedFile.name}</p>
+                      <p className="text-sm text-th-text-dim">{formatBytes(selectedFile.size)}</p>
                     </div>
-                    <p className="text-xs text-slate-400">Click or drop to replace</p>
+                    <p className="text-xs text-th-text-faint">Click or drop to replace</p>
                   </>
                 ) : (
                   <>
-                    <UploadCloud className={`w-10 h-10 ${isDragging ? 'text-slate-600' : 'text-slate-400'}`} />
+                    <UploadCloud className={`w-10 h-10 ${isDragging ? 'text-th-text-sub' : 'text-th-text-faint'}`} />
                     <div className="text-center">
-                      <p className="font-medium text-slate-700">Drop a file here</p>
-                      <p className="text-sm text-slate-500">or click to browse</p>
+                      <p className="font-medium text-th-text-sub">Drop a file here</p>
+                      <p className="text-sm text-th-text-dim">or click to browse</p>
                     </div>
                   </>
                 )}
@@ -390,8 +392,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
 
               <div>
-                <label htmlFor="upload-filename" className="block text-sm font-medium text-slate-700 mb-2">
-                  Save as <span className="text-slate-400 font-normal">(optional — defaults to original filename)</span>
+                <label htmlFor="upload-filename" className="block text-sm font-medium text-th-text-sub mb-2">
+                  Save as <span className="text-th-text-faint font-normal">(optional — defaults to original filename)</span>
                 </label>
                 <input
                   id="upload-filename"
@@ -399,7 +401,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   value={uploadFilenameOverride}
                   onChange={(e) => setUploadFilenameOverride(e.target.value)}
                   placeholder={selectedFile?.name || 'custom-name.jpg'}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
                 />
               </div>
 
@@ -408,7 +410,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               <button
                 type="submit"
                 disabled={isSubmitting || !selectedFile || !folderKey}
-                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+                className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
                 {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4" />Upload File</>}
               </button>
@@ -420,7 +422,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             <form onSubmit={handleTorrentSubmit} className="space-y-5">
               {/* Magnet link input */}
               <div>
-                <label htmlFor="magnet" className="block text-sm font-medium text-slate-700 mb-2">Magnet Link</label>
+                <label htmlFor="magnet" className="block text-sm font-medium text-th-text-sub mb-2">Magnet Link</label>
                 <input
                   id="magnet"
                   type="text"
@@ -428,20 +430,20 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   onChange={(e) => { setMagnetUrl(e.target.value); if (e.target.value) setTorrentFile(null); }}
                   placeholder="magnet:?xt=urn:btih:..."
                   disabled={!!torrentFile}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition disabled:bg-slate-50 disabled:text-slate-400"
+                  className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text disabled:bg-th-bg-alt disabled:text-th-text-faint"
                 />
               </div>
 
               {/* Or divider */}
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-xs text-slate-400 font-medium">OR</span>
-                <div className="flex-1 h-px bg-slate-200" />
+                <div className="flex-1 h-px bg-th-border-light" />
+                <span className="text-xs text-th-text-faint font-medium">OR</span>
+                <div className="flex-1 h-px bg-th-border-light" />
               </div>
 
               {/* .torrent file drop zone */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">.torrent File</label>
+                <label className="block text-sm font-medium text-th-text-sub mb-2">.torrent File</label>
                 <div
                   onDragOver={(e) => { e.preventDefault(); if (!magnetUrl) setIsDraggingTorrent(true); }}
                   onDragLeave={(e) => { e.preventDefault(); setIsDraggingTorrent(false); }}
@@ -455,12 +457,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   onClick={() => { if (!magnetUrl) torrentInputRef.current?.click(); }}
                   className={`relative flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 transition ${
                     magnetUrl
-                      ? 'border-slate-200 bg-slate-50 opacity-40 cursor-not-allowed'
+                      ? 'border-th-border-light bg-th-bg-alt opacity-40 cursor-not-allowed'
                       : isDraggingTorrent
-                      ? 'border-slate-500 bg-slate-50 cursor-pointer'
+                      ? 'border-th-border bg-th-bg-alt cursor-pointer'
                       : torrentFile
                       ? 'border-green-400 bg-green-50 cursor-pointer'
-                      : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50 cursor-pointer'
+                      : 'border-th-border hover:border-th-border hover:bg-th-bg-alt cursor-pointer'
                   }`}
                 >
                   <input
@@ -473,13 +475,13 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   {torrentFile ? (
                     <>
                       <CheckCircle className="w-6 h-6 text-green-500" />
-                      <p className="text-sm font-medium text-slate-800 break-all text-center">{torrentFile.name}</p>
-                      <p className="text-xs text-slate-400">Click or drop to replace</p>
+                      <p className="text-sm font-medium text-th-text break-all text-center">{torrentFile.name}</p>
+                      <p className="text-xs text-th-text-faint">Click or drop to replace</p>
                     </>
                   ) : (
                     <>
-                      <Magnet className={`w-7 h-7 ${isDraggingTorrent ? 'text-slate-600' : 'text-slate-400'}`} />
-                      <p className="text-sm text-slate-500">Drop a <code className="bg-slate-100 px-1 rounded">.torrent</code> file here or click to browse</p>
+                      <Magnet className={`w-7 h-7 ${isDraggingTorrent ? 'text-th-text-sub' : 'text-th-text-faint'}`} />
+                      <p className="text-sm text-th-text-dim">Drop a <code className="bg-th-bg-muted px-1 rounded">.torrent</code> file here or click to browse</p>
                     </>
                   )}
                 </div>
@@ -490,7 +492,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               <button
                 type="submit"
                 disabled={isSubmitting || (!magnetUrl && !torrentFile) || !folderKey}
-                className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+                className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
                 {isSubmitting
                   ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</>
@@ -501,10 +503,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
           {/* Status panel */}
           {currentJob && (
-            <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <div className="mt-6 p-4 bg-th-bg-alt rounded-lg border border-th-border-light">
               <div className="flex items-center gap-3 mb-2">
                 {getStatusIcon()}
-                <span className="font-medium text-slate-800">{getStatusText()}</span>
+                <span className="font-medium text-th-text">{getStatusText()}</span>
               </div>
               {currentJob.status === 'downloading' && (
                 <div className="ml-8 mt-1">
@@ -513,13 +515,13 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                       const pct = Math.min(100, Math.round(((currentJob.downloaded_bytes ?? 0) / currentJob.total_bytes) * 100));
                       return (
                         <>
-                          <div className="flex justify-between text-xs text-slate-500 mb-1">
+                          <div className="flex justify-between text-xs text-th-text-dim mb-1">
                             <span>{formatBytes(currentJob.downloaded_bytes ?? 0)} / {formatBytes(currentJob.total_bytes)}</span>
                             <span>{pct}%</span>
                           </div>
-                          <div className="w-full bg-slate-200 rounded-full h-1.5">
+                          <div className="w-full bg-th-progress rounded-full h-1.5">
                             <div
-                              className="bg-slate-600 h-1.5 rounded-full transition-all duration-300"
+                              className="bg-th-progress-fill h-1.5 rounded-full transition-all duration-300"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
@@ -527,31 +529,31 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                       );
                     })()
                   ) : currentJob.downloaded_bytes != null ? (
-                    <p className="text-xs text-slate-500">{formatBytes(currentJob.downloaded_bytes)} downloaded</p>
+                    <p className="text-xs text-th-text-dim">{formatBytes(currentJob.downloaded_bytes)} downloaded</p>
                   ) : null}
                 </div>
               )}
               {currentJob.status === 'downloading' && currentJob.type === 'torrent' && (
-                <p className="text-xs text-slate-500 ml-8 mt-1">
+                <p className="text-xs text-th-text-dim ml-8 mt-1">
                   {currentJob.peers ?? 0} {(currentJob.peers ?? 0) === 1 ? 'peer' : 'peers'}
                   {currentJob.download_speed ? ` · ${formatBytes(currentJob.download_speed)}/s` : ''}
                 </p>
               )}
               {currentJob.status === 'done' && currentJob.total_bytes != null && (
-                <p className="text-xs text-slate-500 ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
+                <p className="text-xs text-th-text-dim ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
               )}
               {currentJob.message && (
-                <p className="text-sm text-slate-600 ml-8 mt-1 break-all">{currentJob.message}</p>
+                <p className="text-sm text-th-text-sub ml-8 mt-1 break-all">{currentJob.message}</p>
               )}
               {currentJob.filename && (
-                <p className="text-sm text-slate-600 ml-8 break-all">
+                <p className="text-sm text-th-text-sub ml-8 break-all">
                   <span className="font-medium">File:</span> {currentJob.filename}
-                  <span className="mx-1 text-slate-400">→</span>
-                  <span className="text-slate-500">{currentJob.folder_key}</span>
+                  <span className="mx-1 text-th-text-faint">→</span>
+                  <span className="text-th-text-dim">{currentJob.folder_key}</span>
                 </p>
               )}
               {(currentJob.status === 'done' || currentJob.status === 'error' || currentJob.status === 'cancelled') && (
-                <button onClick={handleReset} className="mt-3 ml-8 text-sm text-slate-600 hover:text-slate-800 underline">
+                <button onClick={handleReset} className="mt-3 ml-8 text-sm text-th-text-sub hover:text-th-text underline">
                   {mode === 'upload' ? 'Upload another file' : mode === 'torrent' ? 'Start new torrent' : 'Start new download'}
                 </button>
               )}
@@ -568,12 +570,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 function FolderSelect({ folders, value, onChange }: { folders: string[]; value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label htmlFor="folder" className="block text-sm font-medium text-slate-700 mb-2">
+      <label htmlFor="folder" className="block text-sm font-medium text-th-text-sub mb-2">
         Destination Folder
       </label>
       {folders.length === 0 ? (
-        <p className="text-sm text-slate-500 italic">
-          No folders configured. Set <code className="bg-slate-100 px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-slate-100 px-1 rounded">.env</code> file.
+        <p className="text-sm text-th-text-dim italic">
+          No folders configured. Set <code className="bg-th-bg-muted px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-th-bg-muted px-1 rounded">.env</code> file.
         </p>
       ) : (
         <select
@@ -581,7 +583,7 @@ function FolderSelect({ folders, value, onChange }: { folders: string[]; value: 
           value={value}
           onChange={(e) => onChange(e.target.value)}
           required
-          className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition bg-white"
+          className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
         >
           {folders.map((f) => (
             <option key={f} value={f}>{f}</option>
@@ -595,7 +597,7 @@ function FolderSelect({ folders, value, onChange }: { folders: string[]; value: 
 function AllowedExtensionsHint({ extensions }: { extensions: string[] }) {
   if (extensions.length === 0) return null;
   return (
-    <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">
+    <div className="text-sm text-th-text-dim bg-th-bg-alt p-3 rounded-lg">
       <strong>Allowed extensions:</strong> {extensions.join(', ')}
     </div>
   );

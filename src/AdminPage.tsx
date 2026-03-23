@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, LogOut, ClipboardList } from 'lucide-react';
 import { formatBytes } from './utils';
+import ThemeToggle from './ThemeToggle';
 
 const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
 
@@ -40,7 +41,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
     downloading: 'bg-yellow-100 text-yellow-700',
     done: 'bg-green-100 text-green-700',
     error: 'bg-red-100 text-red-700',
-    cancelled: 'bg-slate-100 text-slate-500',
+    cancelled: 'bg-th-bg-muted text-th-text-dim',
   };
 
   const icons: Record<JobStatus, React.ReactNode> = {
@@ -67,27 +68,27 @@ function formatDate(iso: string) {
 
 
 function SizeCell({ job }: { job: AdminJob }) {
-  if (job.status === 'queued') return <span className="text-slate-300">—</span>;
+  if (job.status === 'queued') return <span className="text-th-text-faint">—</span>;
 
   if (job.status === 'downloading') {
     const dl = job.downloaded_bytes ?? 0;
     if (job.total_bytes) {
       const pct = Math.min(100, Math.round((dl / job.total_bytes) * 100));
       return (
-        <span className="text-slate-500 whitespace-nowrap">
+        <span className="text-th-text-dim whitespace-nowrap">
           {formatBytes(dl)} / {formatBytes(job.total_bytes)}
-          <span className="ml-1 text-xs text-slate-400">({pct}%)</span>
+          <span className="ml-1 text-xs text-th-text-faint">({pct}%)</span>
         </span>
       );
     }
-    return <span className="text-slate-500 whitespace-nowrap">{formatBytes(dl)}</span>;
+    return <span className="text-th-text-dim whitespace-nowrap">{formatBytes(dl)}</span>;
   }
 
   if (job.total_bytes != null) {
-    return <span className="text-slate-500 whitespace-nowrap">{formatBytes(job.total_bytes)}</span>;
+    return <span className="text-th-text-dim whitespace-nowrap">{formatBytes(job.total_bytes)}</span>;
   }
 
-  return <span className="text-slate-300">—</span>;
+  return <span className="text-th-text-faint">—</span>;
 }
 
 export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminPageProps) {
@@ -174,19 +175,20 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 sm:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
         {/* Nav bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-          <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-800 transition">File Manager</a>
+          <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
           <div className="flex items-center gap-3">
             <nav className="flex items-center gap-1 text-sm">
-              <a href="#" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Download</a>
-              <a href="#/browse" className="px-2 py-1 rounded text-slate-500 hover:text-slate-800 transition">Browse</a>
-              <a href="#/admin" className="px-2 py-1 rounded bg-slate-200 text-slate-800 font-medium">Admin</a>
+              <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
+              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
+              <a href="#/admin" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Admin</a>
             </nav>
+            <ThemeToggle />
             {authEnabled && (
-              <button onClick={onUnauthorized} className="text-slate-400 hover:text-slate-700 transition" title="Sign out">
+              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
                 <LogOut className="w-4 h-4" />
               </button>
             )}
@@ -195,17 +197,17 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
 
         {/* Page title */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <ClipboardList className="w-6 h-6 shrink-0 text-slate-700" />
-          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Download Jobs</h1>
+          <ClipboardList className="w-6 h-6 shrink-0 text-th-text-sub" />
+          <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Download Jobs</h1>
           <div className="flex items-center gap-2 ml-auto">
             {lastRefreshed && (
-              <span className="text-xs text-slate-400 whitespace-nowrap">
+              <span className="text-xs text-th-text-faint whitespace-nowrap">
                 Updated {lastRefreshed.toLocaleTimeString()}
               </span>
             )}
             <button
               onClick={fetchJobs}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition text-slate-600 whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition text-th-text-sub whitespace-nowrap"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
@@ -221,14 +223,14 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
               onClick={() => setFilter(value)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
                 filter === value
-                  ? 'bg-slate-700 text-white border-slate-700'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  ? 'bg-th-btn text-th-btn-text border-th-btn'
+                  : 'bg-th-bg text-th-text-sub border-th-border-light hover:bg-th-bg-alt'
               }`}
             >
               {label}
               <span
                 className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-                  filter === value ? 'bg-slate-600 text-slate-200' : 'bg-slate-100 text-slate-500'
+                  filter === value ? 'bg-th-progress-fill text-th-text-faint' : 'bg-th-bg-muted text-th-text-dim'
                 }`}
               >
                 {counts[value]}
@@ -239,7 +241,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
 
         {/* Content */}
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400">
+          <div className="flex items-center justify-center py-20 text-th-text-faint">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />
             Loading jobs…
           </div>
@@ -248,32 +250,32 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
             {error}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-20 text-center text-slate-400 text-sm">
+          <div className="py-20 text-center text-th-text-faint text-sm">
             No jobs{filter !== 'all' ? ` with status "${filter}"` : ''}.
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-x-auto">
+          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">
+                <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
                   <th className="px-4 py-3 w-6"></th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Filename</th>
                   <th className="px-4 py-3">Folder</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-th-border-lighter">
                 {filtered.map((job) => {
                   const expanded = expandedIds.has(job.id);
                   return (
                     <React.Fragment key={job.id}>
-                      <tr className="hover:bg-slate-50 transition">
+                      <tr className="hover:bg-th-bg-alt transition">
                         {/* Expand toggle */}
                         <td className="px-2 py-3 text-center">
                           <button
                             onClick={() => toggleExpand(job.id)}
                             title={expanded ? 'Collapse details' : 'Expand details'}
-                            className="text-slate-300 hover:text-slate-500 transition"
+                            className="text-th-text-faint hover:text-th-text-dim transition"
                           >
                             <ChevronDown
                               className={`w-4 h-4 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
@@ -299,33 +301,33 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="font-medium text-slate-700">{job.filename}</span>
+                          <span className="font-medium text-th-text-sub">{job.filename}</span>
                           {(job.status !== 'queued' && (job.downloaded_bytes != null || job.total_bytes != null)) && (
-                            <span className="block text-xs text-slate-400 mt-0.5">
+                            <span className="block text-xs text-th-text-faint mt-0.5">
                               <SizeCell job={job} />
                             </span>
                           )}
                           {job.message && (
-                            <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs" title={job.message}>
+                            <p className="text-xs text-th-text-faint mt-0.5 truncate max-w-xs" title={job.message}>
                               {job.message}
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{job.folder_key}</td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{job.folder_key}</td>
                       </tr>
                       {expanded && (
-                        <tr className="bg-slate-50">
+                        <tr className="bg-th-bg-alt">
                           <td colSpan={1} aria-hidden="true" />
                           <td colSpan={3} className="px-4 pb-3 pt-1">
                             <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
                               <div>
-                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">URL</dt>
+                                <dt className="text-th-text-faint font-medium uppercase tracking-wide mb-0.5">URL</dt>
                                 <dd>
                                   <a
                                     href={/^https?:\/\//i.test(job.url) ? job.url : '#'}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-slate-500 hover:text-slate-800 break-all transition"
+                                    className="text-th-text-dim hover:text-th-text break-all transition"
                                     title={job.url}
                                   >
                                     {job.url}
@@ -333,12 +335,12 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
                                 </dd>
                               </div>
                               <div>
-                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">Created</dt>
-                                <dd className="text-slate-500">{formatDate(job.created_at)}</dd>
+                                <dt className="text-th-text-faint font-medium uppercase tracking-wide mb-0.5">Created</dt>
+                                <dd className="text-th-text-dim">{formatDate(job.created_at)}</dd>
                               </div>
                               <div>
-                                <dt className="text-slate-400 font-medium uppercase tracking-wide mb-0.5">Updated</dt>
-                                <dd className="text-slate-500">{formatDate(job.updated_at)}</dd>
+                                <dt className="text-th-text-faint font-medium uppercase tracking-wide mb-0.5">Updated</dt>
+                                <dd className="text-th-text-dim">{formatDate(job.updated_at)}</dd>
                               </div>
                             </dl>
                           </td>
