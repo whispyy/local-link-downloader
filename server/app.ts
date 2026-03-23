@@ -908,7 +908,7 @@ export function buildApp() {
   const STATIC_DIR = process.env.STATIC_DIR || '';
   if (STATIC_DIR && existsSync(STATIC_DIR)) {
     app.use(express.static(STATIC_DIR));
-    app.get('*', (_req, res) => {
+    app.get('{*path}', (_req, res) => {
       res.sendFile(path.resolve(STATIC_DIR, 'index.html'));
     });
   }
