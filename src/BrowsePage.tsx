@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2 } from 'lucide-react';
 import { formatBytes, getMediaType } from './utils';
 
 interface BrowseFile {
@@ -41,6 +41,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textLoading, setTextLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -118,6 +120,32 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       }
     }
   }, [folderKey, token]);
+
+  const handleDelete = useCallback(async (filename: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Delete failed' }));
+        setError(data.error || 'Delete failed');
+        return;
+      }
+      if (selectedFile === filename) {
+        setSelectedFile(null);
+        setTextContent(null);
+      }
+      setConfirmDelete(null);
+      fetchFiles();
+    } catch {
+      setError('Failed to delete file');
+    } finally {
+      setDeleting(false);
+    }
+  }, [folderKey, token, selectedFile, fetchFiles]);
 
   const mediaType = selectedFile ? getMediaType(selectedFile) : null;
 
@@ -230,7 +258,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3 w-28">Size</th>
                   <th className="px-4 py-3 w-44">Modified</th>
-                  <th className="px-4 py-3 w-16"></th>
+                  <th className="px-4 py-3 w-24"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -251,15 +279,44 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatBytes(file.size)}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(file.modifiedAt)}</td>
                       <td className="px-4 py-3">
-                        <a
-                          href={fileUrl(file.name)}
-                          download={file.name}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-slate-400 hover:text-slate-700 transition"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </a>
+                        <div className="relative overflow-hidden w-16 h-5">
+                          <div className={`absolute inset-0 flex items-center gap-2 transition-transform duration-150 ${confirmDelete === file.name ? '-translate-x-full' : 'translate-x-0'}`}>
+                            <a
+                              href={fileUrl(file.name)}
+                              download={file.name}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-400 hover:text-slate-700 transition"
+                              title="Download"
+                            >
+                              <Download className="w-4 h-4" />
+                            </a>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setConfirmDelete(file.name); }}
+                              className="text-slate-300 hover:text-red-500 transition"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div
+                            className={`absolute inset-0 flex items-center gap-1 transition-transform duration-150 ${confirmDelete === file.name ? 'translate-x-0' : 'translate-x-full'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => handleDelete(file.name)}
+                              disabled={deleting}
+                              className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                            >
+                              {deleting ? 'Deleting…' : 'Delete?'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelete(null)}
+                              className="text-xs text-slate-400 hover:text-slate-600"
+                            >
+                              No
+                            </button>
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   );

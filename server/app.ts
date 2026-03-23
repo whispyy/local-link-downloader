@@ -852,13 +852,12 @@ export function buildApp() {
     }
 
     const folderPath = folderMapping.get(folderKey)!;
-    const sanitized = sanitizeFilename(filename);
-    if (!sanitized) {
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
 
-    const fullPath = path.join(folderPath, sanitized);
+    const fullPath = path.join(folderPath, filename);
     const resolvedFolder = path.resolve(folderPath);
     const resolvedFull = path.resolve(fullPath);
     if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
@@ -872,7 +871,7 @@ export function buildApp() {
     }
 
     const fileStat = statSync(fullPath);
-    const ext = path.extname(sanitized).toLowerCase();
+    const ext = path.extname(filename).toLowerCase();
     const contentType = MIME_MAP[ext] || 'application/octet-stream';
 
     res.setHeader('Content-Type', contentType);
@@ -902,6 +901,42 @@ export function buildApp() {
     res.setHeader('Content-Length', fileStat.size);
     res.setHeader('Accept-Ranges', 'bytes');
     createReadStream(fullPath).pipe(res);
+  });
+
+  // ── DELETE /api/browse/:folderKey/:filename ───────────────────────────────
+  app.delete('/api/browse/:folderKey/:filename', authMiddleware, async (req, res) => {
+    const { folderKey, filename } = req.params;
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const fullPath = path.join(folderPath, filename);
+    const resolvedFolder = path.resolve(folderPath);
+    const resolvedFull = path.resolve(fullPath);
+    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+
+    if (!existsSync(fullPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    try {
+      await unlink(fullPath);
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: 'Failed to delete file' });
+    }
   });
 
   // ── Static files (production only) ─────────────────────────────────────────
