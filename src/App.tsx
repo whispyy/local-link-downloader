@@ -234,27 +234,30 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to flex items-center justify-center p-3 sm:p-4">
+    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
+      {/* Sticky nav bar */}
+      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light">
+        <div className="max-w-2xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
+          <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
+          <div className="flex items-center gap-3">
+            <nav className="flex items-center gap-1 text-sm">
+              <a href="#" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Download</a>
+              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
+              <a href="#/admin" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Admin</a>
+            </nav>
+            <ThemeToggle />
+            {authEnabled && (
+              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex items-center justify-center p-3 sm:p-4 min-h-[calc(100vh-3rem)]">
       <div className="w-full max-w-2xl">
         <div className="bg-th-bg rounded-lg shadow-lg p-5 sm:p-8">
-
-          {/* Nav bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-            <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
-            <div className="flex items-center gap-3">
-              <nav className="flex items-center gap-1 text-sm">
-                <a href="#" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Download</a>
-                <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
-                <a href="#/admin" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Admin</a>
-              </nav>
-              <ThemeToggle />
-              {authEnabled && (
-                <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
 
           {/* Page title */}
           <div className="flex items-center gap-3 mb-6">
@@ -560,6 +563,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
