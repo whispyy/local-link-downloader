@@ -43,7 +43,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
     cancelled: 'bg-slate-100 text-slate-500',
   };
 
-  const icons: Record<JobStatus, JSX.Element> = {
+  const icons: Record<JobStatus, React.ReactNode> = {
     queued: <Clock className="w-3.5 h-3.5" />,
     downloading: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
     done: <CheckCircle className="w-3.5 h-3.5" />,
