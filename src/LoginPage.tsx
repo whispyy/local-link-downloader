@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Lock, Loader2, Eye, EyeOff } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 interface LoginPageProps {
   onSuccess: (token: string) => void;
@@ -39,15 +40,18 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to flex items-center justify-center p-4">
+      <div className="fixed top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="bg-th-bg rounded-lg shadow-lg p-8">
           <div className="flex flex-col items-center mb-6">
-            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
-              <Lock className="w-6 h-6 text-slate-600" />
+            <div className="w-12 h-12 bg-th-bg-muted rounded-full flex items-center justify-center mb-3">
+              <Lock className="w-6 h-6 text-th-text-sub" />
             </div>
-            <h1 className="text-xl font-semibold text-slate-800">File Manager</h1>
-            <p className="text-sm text-slate-500 mt-1">Enter your password to continue</p>
+            <h1 className="text-xl font-semibold text-th-text">File Manager</h1>
+            <p className="text-sm text-th-text-dim mt-1">Enter your password to continue</p>
           </div>
 
           {error && (
@@ -58,7 +62,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label htmlFor="password" className="block text-sm font-medium text-th-text-sub mb-1.5">
                 Password
               </label>
               <div className="relative">
@@ -70,12 +74,12 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
                   required
                   autoFocus
                   placeholder="••••••••"
-                  className="w-full px-4 py-2.5 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none transition"
+                  className="w-full px-4 py-2.5 pr-10 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600 transition"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-th-text-faint hover:text-th-text-sub transition"
                   tabIndex={-1}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
@@ -87,7 +91,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
             <button
               type="submit"
               disabled={loading || !password}
-              className="w-full bg-slate-700 text-white py-2.5 px-4 rounded-lg hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
             >
               {loading ? (
                 <>
