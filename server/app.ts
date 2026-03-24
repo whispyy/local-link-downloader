@@ -81,7 +81,7 @@ function makeLogger() {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function isAuthEnabled(): boolean {
   return Boolean(process.env.APP_PASSWORD);
@@ -103,6 +103,7 @@ export function isValidSession(sessions: Map<string, number>, token: string): bo
     sessions.delete(token);
     return false;
   }
+  sessions.set(token, Date.now() + SESSION_TTL_MS);
   return true;
 }
 
