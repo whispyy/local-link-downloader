@@ -18,8 +18,14 @@ const LOG_FILE = path.join(LOG_DIR, 'downloads.log');
 
 const app = buildApp();
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   const timestamp = new Date().toISOString();
   process.stdout.write(`[${timestamp}] [INFO] Local Link Downloader API server running on port ${PORT}\n`);
   process.stdout.write(`[${timestamp}] [INFO] Log file: ${path.resolve(LOG_FILE)}\n`);
 });
+
+// Node 18+ defaults requestTimeout to 5 minutes, which causes 408s on large
+// uploads.  Raise it to 30 minutes so big files have time to transfer.
+server.requestTimeout = 30 * 60 * 1000;
+server.headersTimeout = 60 * 1000; // keep headers timeout tight
+server.timeout = 0; // no idle timeout — long transfers are expected

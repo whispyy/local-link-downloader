@@ -117,29 +117,63 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   // ── Upload submit ───────────────────────────────────────────────────────────
-  const handleUploadSubmit = async (e: React.FormEvent) => {
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const handleUploadSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile) return;
-    setIsSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('folderKey', folderKey);
-      if (uploadFilenameOverride) formData.append('filenameOverride', uploadFilenameOverride);
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        headers: authHeaders, // no Content-Type — browser sets multipart boundary
-        body: formData,
-      });
-      if (response.status === 401) { onUnauthorized(); return; }
-      const data = await response.json();
-      setCurrentJob(response.ok ? { ...data, status: 'done' } : { id: 'error', status: 'error', message: data.error || 'Upload failed' });
-    } catch (error) {
-      setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
-    } finally {
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('folderKey', folderKey);
+    if (uploadFilenameOverride) formData.append('filenameOverride', uploadFilenameOverride);
+
+    const uploadingJob: DownloadJob = {
+      id: 'upload',
+      status: 'downloading',
+      type: 'http',
+      filename: uploadFilenameOverride || selectedFile.name,
+      folder_key: folderKey,
+      total_bytes: selectedFile.size,
+      downloaded_bytes: 0,
+    };
+    setCurrentJob(uploadingJob);
+    setIsSubmitting(true);
+
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+
+    xhr.upload.addEventListener('progress', (evt) => {
+      if (evt.lengthComputable) {
+        setCurrentJob((prev) => prev ? { ...prev, downloaded_bytes: evt.loaded, total_bytes: evt.total } : prev);
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      xhrRef.current = null;
       setIsSubmitting(false);
-    }
+      if (xhr.status === 401) { onUnauthorized(); return; }
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setCurrentJob((prev) => prev ? { ...prev, ...data, status: 'done', downloaded_bytes: prev.total_bytes } : prev);
+        } else {
+          setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: data.error || 'Upload failed' } : prev);
+        }
+      } catch {
+        setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Invalid server response' } : prev);
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      xhrRef.current = null;
+      setIsSubmitting(false);
+      setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Network error' } : prev);
+    });
+
+    xhr.open('POST', '/api/upload');
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.send(formData);
   };
 
   // ── Torrent submit ──────────────────────────────────────────────────────────
@@ -203,7 +237,9 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     if (!currentJob) return null;
     switch (currentJob.status) {
       case 'queued':      return <Clock className="w-5 h-5 text-blue-500" />;
-      case 'downloading': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
+      case 'downloading': return mode === 'upload'
+        ? <Upload className="w-5 h-5 text-blue-500 animate-pulse" />
+        : <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
       case 'done':        return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'cancelled':   return <XCircle className="w-5 h-5 text-th-text-faint" />;
       case 'error':       return <XCircle className="w-5 h-5 text-red-500" />;
@@ -214,7 +250,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     if (!currentJob) return null;
     switch (currentJob.status) {
       case 'queued':      return 'Queued';
-      case 'downloading': return currentJob.type === 'torrent' ? 'Downloading torrent...' : 'Downloading...';
+      case 'downloading': return mode === 'upload' ? 'Uploading...' : currentJob.type === 'torrent' ? 'Downloading torrent...' : 'Downloading...';
       case 'done':        return mode === 'upload' ? 'Upload complete' : 'Download complete';
       case 'cancelled':   return 'Cancelled';
       case 'error':       return 'Error';
@@ -222,6 +258,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   const handleReset = () => {
+    if (xhrRef.current) { xhrRef.current.abort(); xhrRef.current = null; }
+    setIsSubmitting(false);
     setCurrentJob(null);
     setUrl('');
     setFilenameOverride('');

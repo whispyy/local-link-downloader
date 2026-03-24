@@ -444,7 +444,11 @@ export function buildApp() {
     },
   });
 
-  app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  app.post('/api/upload', (req, _res, next) => {
+    // Disable socket-level timeout for uploads so large files don't 408.
+    req.socket.setTimeout(0);
+    next();
+  }, authMiddleware, upload.single('file'), async (req, res) => {
     const { folderKey, filenameOverride } = req.body as {
       folderKey?: string;
       filenameOverride?: string;
