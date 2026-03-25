@@ -855,7 +855,7 @@ export function buildApp() {
   // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
   // Remux (or transcode) a video to browser-compatible MP4 on the fly.
   const BROWSER_VIDEO_CODECS = new Set(['h264', 'hevc', 'h265']);
-  const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus']);
+  const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3']);
 
   app.get('/api/browse/:folderKey/:filename/stream', authMiddlewareWithQuery, async (req, res) => {
     if (process.env.ENABLE_TRANSCODING !== 'true') {
@@ -913,7 +913,7 @@ export function buildApp() {
 
       const ffmpegArgs = [
         '-i', fullPath,
-        '-movflags', 'frag_keyframe+empty_moov+faststart',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         ...(canCopyVideo ? ['-c:v', 'copy'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']),
         ...(canCopyAudio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k']),
         '-f', 'mp4',
