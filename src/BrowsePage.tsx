@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2, RefreshCw } from 'lucide-react';
-import { formatBytes, getMediaType, needsStreamEndpoint } from './utils';
+import { formatBytes, getMediaType } from './utils';
 import ThemeToggle from './ThemeToggle';
 
 interface BrowseFile {
@@ -96,7 +96,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 
   const videoSrc = (filename: string) =>
-    transcoding && needsStreamEndpoint(filename)
+    transcoding
       ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}`
       : fileUrl(filename);
 
@@ -251,6 +251,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     key={selectedFile}
                     src={videoSrc(selectedFile)}
                     controls
+                    playsInline
                     className="max-w-full max-h-[70vh]"
                   />
                 )}

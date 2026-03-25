@@ -854,7 +854,7 @@ export function buildApp() {
 
   // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
   // Remux (or transcode) a video to browser-compatible MP4 on the fly.
-  const BROWSER_VIDEO_CODECS = new Set(['h264', 'hevc', 'h265']);
+  const BROWSER_VIDEO_CODECS = new Set(['h264']);
   const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3']);
 
   app.get('/api/browse/:folderKey/:filename/stream', authMiddlewareWithQuery, async (req, res) => {
@@ -922,6 +922,9 @@ export function buildApp() {
 
       res.setHeader('Content-Type', 'video/mp4');
       res.setHeader('Content-Disposition', 'inline');
+      // Tell Safari not to attempt Range requests on a live-transcoded stream
+      res.setHeader('Accept-Ranges', 'none');
+      res.setHeader('Cache-Control', 'no-cache');
 
       const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
