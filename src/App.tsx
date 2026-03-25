@@ -62,7 +62,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   }, []);
 
   useEffect(() => {
-    if (currentJob && (currentJob.status === 'queued' || currentJob.status === 'downloading')) {
+    if (currentJob && currentJob.id !== 'upload' && (currentJob.status === 'queued' || currentJob.status === 'downloading')) {
       const interval = setInterval(() => pollStatus(currentJob.id), 1000);
       return () => clearInterval(interval);
     }
