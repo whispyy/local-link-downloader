@@ -39,6 +39,8 @@ RUN cp server/package.json dist/server/package.json
 # ─── Stage 3: Production image ────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 # Install only production dependencies

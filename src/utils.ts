@@ -58,3 +58,12 @@ export function getMediaType(filename: string): MediaType {
   const ext = filename.substring(dot).toLowerCase();
   return MEDIA_EXTENSIONS[ext] ?? null;
 }
+
+/** Containers that browsers can't play natively and need server-side remux */
+const NEEDS_STREAM = new Set(['.mkv', '.avi', '.wmv', '.flv', '.m2ts']);
+
+export function needsStreamEndpoint(filename: string): boolean {
+  const dot = filename.lastIndexOf('.');
+  if (dot === -1) return false;
+  return NEEDS_STREAM.has(filename.substring(dot).toLowerCase());
+}
