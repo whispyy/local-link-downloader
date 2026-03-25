@@ -15,6 +15,7 @@ RUN npm ci
 # Copy source and build
 COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
 COPY postcss.config.js tailwind.config.js eslint.config.js ./
+COPY public/ ./public/
 COPY src/ ./src/
 RUN COMMIT_HASH=$COMMIT_HASH npm run build
 
