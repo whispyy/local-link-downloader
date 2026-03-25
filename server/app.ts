@@ -15,7 +15,11 @@ import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat } from 'fs/promises';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
 import path from 'path';
+
+const execFileAsync = promisify(execFile);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -282,8 +286,9 @@ export function buildApp() {
       .split(',')
       .map((ext) => ext.trim())
       .filter((ext) => ext.length > 0);
-    log('INFO', 'Config requested', { folders, allowedExtensions });
-    res.json({ folders, allowedExtensions });
+    const transcoding = process.env.ENABLE_TRANSCODING === 'true';
+    log('INFO', 'Config requested', { folders, allowedExtensions, transcoding });
+    res.json({ folders, allowedExtensions, transcoding });
   });
 
   // ── POST /api/download ──────────────────────────────────────────────────────
@@ -844,6 +849,100 @@ export function buildApp() {
     } catch (err) {
       log('ERROR', 'Browse listing failed', { folderKey, error: String(err) });
       res.status(500).json({ error: 'Failed to list files' });
+    }
+  });
+
+  // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
+  // Remux (or transcode) a video to browser-compatible MP4 on the fly.
+  const BROWSER_VIDEO_CODECS = new Set(['h264', 'hevc', 'h265']);
+  const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus']);
+
+  app.get('/api/browse/:folderKey/:filename/stream', authMiddlewareWithQuery, async (req, res) => {
+    if (process.env.ENABLE_TRANSCODING !== 'true') {
+      res.status(404).json({ error: 'Transcoding is not enabled' });
+      return;
+    }
+
+    const { folderKey, filename } = req.params;
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const fullPath = path.join(folderPath, filename);
+    const resolvedFolder = path.resolve(folderPath);
+    const resolvedFull = path.resolve(fullPath);
+    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+
+    if (!existsSync(fullPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    try {
+      // Probe codecs
+      const { stdout } = await execFileAsync('ffprobe', [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        fullPath,
+      ]);
+      const probeData = JSON.parse(stdout);
+      let videoCodec: string | null = null;
+      let audioCodec: string | null = null;
+      for (const stream of probeData.streams || []) {
+        if (stream.codec_type === 'video' && !videoCodec) videoCodec = stream.codec_name;
+        if (stream.codec_type === 'audio' && !audioCodec) audioCodec = stream.codec_name;
+      }
+
+      const canCopyVideo = videoCodec !== null && BROWSER_VIDEO_CODECS.has(videoCodec);
+      const canCopyAudio = audioCodec === null || BROWSER_AUDIO_CODECS.has(audioCodec);
+      const mode = canCopyVideo && canCopyAudio ? 'remux' : 'transcode';
+
+      log('INFO', 'Streaming file', { filename, videoCodec, audioCodec, mode });
+
+      const ffmpegArgs = [
+        '-i', fullPath,
+        '-movflags', 'frag_keyframe+empty_moov+faststart',
+        ...(canCopyVideo ? ['-c:v', 'copy'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']),
+        ...(canCopyAudio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k']),
+        '-f', 'mp4',
+        'pipe:1',
+      ];
+
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Disposition', 'inline');
+
+      const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      ffmpeg.stdout.pipe(res);
+
+      ffmpeg.on('error', (err) => {
+        log('ERROR', 'ffmpeg spawn error', { error: err.message });
+        if (!res.headersSent) res.status(500).json({ error: 'Transcoding failed' });
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code !== 0 && code !== null) {
+          log('WARN', `ffmpeg exited with code ${code}`, { filename });
+        }
+      });
+
+      // Kill ffmpeg if client disconnects
+      req.on('close', () => { if (!ffmpeg.killed) ffmpeg.kill('SIGTERM'); });
+    } catch (err) {
+      log('ERROR', 'Stream probe/setup failed', { filename, error: String(err) });
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to stream file' });
     }
   });
 

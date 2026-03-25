@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2 } from 'lucide-react';
-import { formatBytes, getMediaType } from './utils';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2, RefreshCw } from 'lucide-react';
+import { formatBytes, getMediaType, needsStreamEndpoint } from './utils';
 import ThemeToggle from './ThemeToggle';
 
 interface BrowseFile {
@@ -33,6 +33,8 @@ function formatDate(iso: string) {
 export default function BrowsePage({ token, onUnauthorized, authEnabled }: BrowsePageProps) {
   const [folders, setFolders] = useState<string[]>([]);
   const [folderKey, setFolderKey] = useState('');
+  const [transcodingAvailable, setTranscodingAvailable] = useState(false);
+  const [transcoding, setTranscoding] = useState(false);
   const [files, setFiles] = useState<BrowseFile[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -57,6 +59,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         if (!data) return;
         setFolders(data.folders);
         if (data.folders.length > 0) setFolderKey(data.folders[0]);
+        const tc = data.transcoding ?? false;
+        setTranscodingAvailable(tc);
+        setTranscoding(tc);
       })
       .catch(() => setError('Could not load configuration'));
   }, []);
@@ -89,6 +94,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   const fileUrl = (filename: string) =>
     `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+
+  const videoSrc = (filename: string) =>
+    transcoding && needsStreamEndpoint(filename)
+      ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}`
+      : fileUrl(filename);
 
   const handleFolderChange = (key: string) => {
     setFolderKey(key);
@@ -180,9 +190,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
           <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Browse Files</h1>
         </div>
 
-        {/* Folder selector */}
-        {folders.length > 0 && (
-          <div className="mb-4">
+        {/* Folder selector + transcoding toggle */}
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          {folders.length > 0 && (
             <select
               value={folderKey}
               onChange={(e) => handleFolderChange(e.target.value)}
@@ -192,8 +202,23 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 <option key={f} value={f}>{f}</option>
               ))}
             </select>
-          </div>
-        )}
+          )}
+          {transcodingAvailable && (
+            <label className="flex items-center gap-2 text-sm text-th-text-sub cursor-pointer select-none">
+              <RefreshCw className="w-4 h-4" />
+              <span>Transcode</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={transcoding}
+                onClick={() => setTranscoding(t => !t)}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${transcoding ? 'bg-purple-500' : 'bg-th-border'}`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${transcoding ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+              </button>
+            </label>
+          )}
+        </div>
 
         {/* Error */}
         {error && (
@@ -224,7 +249,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 {mediaType === 'video' && (
                   <video
                     key={selectedFile}
-                    src={fileUrl(selectedFile)}
+                    src={videoSrc(selectedFile)}
                     controls
                     className="max-w-full max-h-[70vh]"
                   />
