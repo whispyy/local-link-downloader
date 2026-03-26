@@ -17,6 +17,7 @@ import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat } from 'fs/promises';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 import path from 'path';
 
 const execFileAsync = promisify(execFile);
@@ -853,9 +854,87 @@ export function buildApp() {
   });
 
   // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
-  // Remux (or transcode) a video to browser-compatible MP4 on the fly.
+  // Transcode a video to browser-compatible MP4, cache the result, and serve
+  // with full Range-request support so Safari (which refuses chunked streams
+  // without Content-Length) can play it.
   const BROWSER_VIDEO_CODECS = new Set(['h264']);
   const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3']);
+
+  // Cache: source path → { tmpPath, ready, promise, lastAccess }
+  const transcodeCache = new Map<string, {
+    tmpPath: string;
+    ready: boolean;
+    promise: Promise<void>;
+    lastAccess: number;
+  }>();
+
+  // Clean up stale cache entries every 10 minutes
+  setInterval(() => {
+    const staleMs = 30 * 60 * 1000; // 30 min
+    const now = Date.now();
+    for (const [key, entry] of transcodeCache) {
+      if (entry.ready && now - entry.lastAccess > staleMs) {
+        transcodeCache.delete(key);
+        unlink(entry.tmpPath).catch(() => {});
+        log('INFO', 'Cleaned up transcode cache', { key });
+      }
+    }
+  }, 10 * 60 * 1000);
+
+  function transcodeToFile(fullPath: string, tmpPath: string, canCopyVideo: boolean, canCopyAudio: boolean): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const ffmpegArgs = [
+        '-i', fullPath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        ...(canCopyVideo
+          ? ['-c:v', 'copy']
+          : ['-c:v', 'libx264', '-profile:v', 'high', '-level', '4.0', '-pix_fmt', 'yuv420p', '-preset', 'fast', '-crf', '23']),
+        ...(canCopyAudio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k']),
+        '-movflags', '+faststart',
+        '-y', tmpPath,
+      ];
+
+      const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let stderrBuf = '';
+      ffmpeg.stderr!.setEncoding('utf8');
+      ffmpeg.stderr!.on('data', (chunk: string) => { stderrBuf += chunk; if (stderrBuf.length > 4000) stderrBuf = stderrBuf.slice(-2000); });
+
+      ffmpeg.on('error', (err) => reject(err));
+      ffmpeg.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited with code ${code}: ${stderrBuf.slice(-1000)}`));
+      });
+    });
+  }
+
+  function serveFileWithRanges(filePath: string, req: express.Request, res: express.Response) {
+    const fileStat = statSync(filePath);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const rangeHeader = req.headers.range;
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileStat.size - 1;
+        if (start >= fileStat.size || end >= fileStat.size || start > end) {
+          res.status(416).setHeader('Content-Range', `bytes */${fileStat.size}`).end();
+          return;
+        }
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileStat.size}`);
+        res.setHeader('Content-Length', end - start + 1);
+        createReadStream(filePath, { start, end }).pipe(res);
+        return;
+      }
+    }
+
+    res.setHeader('Content-Length', fileStat.size);
+    createReadStream(filePath).pipe(res);
+  }
 
   app.get('/api/browse/:folderKey/:filename/stream', authMiddlewareWithQuery, async (req, res) => {
     if (process.env.ENABLE_TRANSCODING !== 'true') {
@@ -890,62 +969,58 @@ export function buildApp() {
     }
 
     try {
-      // Probe codecs
-      const { stdout } = await execFileAsync('ffprobe', [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        fullPath,
-      ]);
-      const probeData = JSON.parse(stdout);
-      let videoCodec: string | null = null;
-      let audioCodec: string | null = null;
-      for (const stream of probeData.streams || []) {
-        if (stream.codec_type === 'video' && !videoCodec) videoCodec = stream.codec_name;
-        if (stream.codec_type === 'audio' && !audioCodec) audioCodec = stream.codec_name;
+      // Check cache first
+      const cacheKey = resolvedFull;
+      let cacheEntry = transcodeCache.get(cacheKey);
+
+      if (!cacheEntry) {
+        // Probe codecs
+        const { stdout } = await execFileAsync('ffprobe', [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_streams',
+          fullPath,
+        ]);
+        const probeData = JSON.parse(stdout);
+        let videoCodec: string | null = null;
+        let audioCodec: string | null = null;
+        for (const stream of probeData.streams || []) {
+          if (stream.codec_type === 'video' && !videoCodec) videoCodec = stream.codec_name;
+          if (stream.codec_type === 'audio' && !audioCodec) audioCodec = stream.codec_name;
+        }
+
+        const canCopyVideo = videoCodec !== null && BROWSER_VIDEO_CODECS.has(videoCodec);
+        const canCopyAudio = audioCodec === null || BROWSER_AUDIO_CODECS.has(audioCodec);
+        const mode = canCopyVideo && canCopyAudio ? 'remux' : 'transcode';
+
+        log('INFO', 'Transcoding file', { filename, videoCodec, audioCodec, mode });
+
+        const tmpPath = path.join(os.tmpdir(), `lld-${randomUUID()}.mp4`);
+        const promise = transcodeToFile(fullPath, tmpPath, canCopyVideo, canCopyAudio);
+
+        cacheEntry = { tmpPath, ready: false, promise, lastAccess: Date.now() };
+        transcodeCache.set(cacheKey, cacheEntry);
+
+        promise.then(() => {
+          cacheEntry!.ready = true;
+          log('INFO', 'Transcode complete', { filename, tmpPath });
+        }).catch((err) => {
+          transcodeCache.delete(cacheKey);
+          unlink(tmpPath).catch(() => {});
+          log('ERROR', 'Transcode failed', { filename, error: String(err) });
+        });
       }
 
-      const canCopyVideo = videoCodec !== null && BROWSER_VIDEO_CODECS.has(videoCodec);
-      const canCopyAudio = audioCodec === null || BROWSER_AUDIO_CODECS.has(audioCodec);
-      const mode = canCopyVideo && canCopyAudio ? 'remux' : 'transcode';
+      cacheEntry.lastAccess = Date.now();
 
-      log('INFO', 'Streaming file', { filename, videoCodec, audioCodec, mode });
+      // Wait for transcoding to finish
+      await cacheEntry.promise;
 
-      const ffmpegArgs = [
-        '-i', fullPath,
-        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-        ...(canCopyVideo ? ['-c:v', 'copy'] : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']),
-        ...(canCopyAudio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k']),
-        '-f', 'mp4',
-        'pipe:1',
-      ];
-
-      res.setHeader('Content-Type', 'video/mp4');
-      res.setHeader('Content-Disposition', 'inline');
-      // Tell Safari not to attempt Range requests on a live-transcoded stream
-      res.setHeader('Accept-Ranges', 'none');
-      res.setHeader('Cache-Control', 'no-cache');
-
-      const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-      ffmpeg.stdout.pipe(res);
-
-      ffmpeg.on('error', (err) => {
-        log('ERROR', 'ffmpeg spawn error', { error: err.message });
-        if (!res.headersSent) res.status(500).json({ error: 'Transcoding failed' });
-      });
-
-      ffmpeg.on('close', (code) => {
-        if (code !== 0 && code !== null) {
-          log('WARN', `ffmpeg exited with code ${code}`, { filename });
-        }
-      });
-
-      // Kill ffmpeg if client disconnects
-      req.on('close', () => { if (!ffmpeg.killed) ffmpeg.kill('SIGTERM'); });
+      // Serve the transcoded file with Range support
+      serveFileWithRanges(cacheEntry.tmpPath, req, res);
     } catch (err) {
-      log('ERROR', 'Stream probe/setup failed', { filename, error: String(err) });
-      if (!res.headersSent) res.status(500).json({ error: 'Failed to stream file' });
+      log('ERROR', 'Stream setup failed', { filename, error: String(err) });
+      if (!res.headersSent) res.status(500).json({ error: 'Transcoding failed' });
     }
   });
 
