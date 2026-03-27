@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, LogOut } from 'lucide-react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, LogOut, HardDrive } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { formatBytes } from './utils';
 
@@ -276,7 +276,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       {/* Sticky nav bar */}
       <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
         <div className="max-w-2xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
+          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
           <div className="flex items-center gap-3">
             <nav className="flex items-center gap-1 text-sm">
               <a href="#" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Download</a>

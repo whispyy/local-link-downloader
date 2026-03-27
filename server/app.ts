@@ -17,6 +17,7 @@ import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
+import { buildUsageTracker } from './usage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -224,10 +225,14 @@ export function buildApp() {
 
   // Resolve log path from env at buildApp() call time so tests can override LOG_DIR
   const log = makeLogger();
+  const usage = buildUsageTracker();
 
   // ── Middleware ──────────────────────────────────────────────────────────────
   app.use(cors());
   app.use(express.json());
+
+  // Track all /api requests for the usage page
+  app.use('/api', usage.middleware);
 
   // ── Auth helpers (scoped to this instance) ──────────────────────────────────
   function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -286,6 +291,22 @@ export function buildApp() {
     const transcoding = process.env.ENABLE_TRANSCODING === 'true';
     log('INFO', 'Config requested', { folders, allowedExtensions, transcoding });
     res.json({ folders, allowedExtensions, transcoding });
+  });
+
+  // ── GET /api/usage ────────────────────────────────────────────────────────
+  app.get('/api/usage', authMiddleware, async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const from = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const to = typeof req.query.to === 'string' ? req.query.to : undefined;
+    const endpoint = typeof req.query.endpoint === 'string' ? req.query.endpoint : undefined;
+    try {
+      const result = await usage.read({ from, to, path: endpoint, page, limit });
+      res.json({ ...result, page, limit });
+    } catch (err) {
+      log('ERROR', 'Usage read failed', { error: String(err) });
+      res.status(500).json({ error: 'Failed to read usage logs' });
+    }
   });
 
   // ── POST /api/download ──────────────────────────────────────────────────────

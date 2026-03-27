@@ -1,0 +1,259 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Activity, Loader2, LogOut, RefreshCw, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
+
+interface UsageEntry {
+  timestamp: string;
+  method: string;
+  path: string;
+  ip: string;
+  userAgent: string;
+  statusCode: number;
+  responseTimeMs: number;
+}
+
+interface UsagePageProps {
+  token: string;
+  onUnauthorized: () => void;
+  authEnabled: boolean;
+}
+
+const PAGE_SIZE = 50;
+
+function methodColor(method: string) {
+  switch (method) {
+    case 'GET':    return 'bg-blue-100 text-blue-700';
+    case 'POST':   return 'bg-green-100 text-green-700';
+    case 'DELETE':  return 'bg-red-100 text-red-700';
+    case 'PUT':    return 'bg-amber-100 text-amber-700';
+    case 'PATCH':  return 'bg-purple-100 text-purple-700';
+    default:       return 'bg-th-bg-muted text-th-text-dim';
+  }
+}
+
+function statusColor(code: number) {
+  if (code < 300) return 'text-green-600';
+  if (code < 400) return 'text-amber-600';
+  return 'text-red-600';
+}
+
+function formatTs(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+function toLocalDatetime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export default function UsagePage({ token, onUnauthorized, authEnabled }: UsagePageProps) {
+  const [entries, setEntries] = useState<UsageEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Date filter — default to today start-of-day / end-of-day
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
+  const [from, setFrom] = useState(toLocalDatetime(todayStart));
+  const [to, setTo] = useState(toLocalDatetime(todayEnd));
+  const [pathInput, setPathInput] = useState('');
+  const [pathFilter, setPathFilter] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePathChange = (value: string) => {
+    setPathInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPathFilter(value);
+      setPage(1);
+    }, 400);
+  };
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
+  const fetchUsage = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+      if (from) params.set('from', new Date(from).toISOString());
+      if (to) params.set('to', new Date(to).toISOString());
+      if (pathFilter) params.set('endpoint', pathFilter);
+      const res = await fetch(`/api/usage?${params}`, { headers: authHeaders });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      setEntries(data.entries);
+      setTotal(data.total);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load usage');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, page, from, to, pathFilter]);
+
+  useEffect(() => { fetchUsage(); }, [fetchUsage]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
+      {/* Sticky nav bar */}
+      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
+        <div className="max-w-6xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
+          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
+          <div className="flex items-center gap-3">
+            <nav className="flex items-center gap-1 text-sm">
+              <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
+              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
+              <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
+              <a href="#/usage" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Usage</a>
+            </nav>
+            <ThemeToggle />
+            {authEnabled && (
+              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="p-4 sm:p-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Page title */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            <Activity className="w-6 h-6 shrink-0 text-th-text-sub" />
+            <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Usage Log</h1>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={fetchUsage}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition text-th-text-sub whitespace-nowrap"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Date filter */}
+          <div className="flex flex-wrap items-end gap-3 mb-4">
+            <div>
+              <label className="block text-xs font-medium text-th-text-dim mb-1">From</label>
+              <input
+                type="datetime-local"
+                value={from}
+                onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-th-text-dim mb-1">To</label>
+              <input
+                type="datetime-local"
+                value={to}
+                onChange={(e) => { setTo(e.target.value); setPage(1); }}
+                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-th-text-dim mb-1">Endpoint</label>
+              <input
+                type="text"
+                value={pathInput}
+                onChange={(e) => handlePathChange(e.target.value)}
+                placeholder="/api/download"
+                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text placeholder:text-th-text-faint focus:outline-none focus:ring-1 focus:ring-th-ring w-44"
+              />
+            </div>
+            <span className="text-xs text-th-text-faint self-end pb-2">
+              {total} request{total !== 1 ? 's' : ''} found
+            </span>
+          </div>
+
+          {/* Content */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20 text-th-text-faint">
+              <Loader2 className="w-6 h-6 animate-spin mr-2" />
+              Loading usage data...
+            </div>
+          ) : error ? (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="py-20 text-center text-th-text-faint text-sm">
+              No requests recorded for this time range.
+            </div>
+          ) : (
+            <>
+              <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
+                      <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Method</th>
+                      <th className="px-4 py-3">Endpoint</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">IP</th>
+                      <th className="px-4 py-3">Duration</th>
+                      <th className="px-4 py-3 hidden lg:table-cell">User Agent</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-th-border-lighter">
+                    {entries.map((e, i) => (
+                      <tr key={i} className="hover:bg-th-bg-alt transition">
+                        <td className="px-4 py-2.5 whitespace-nowrap text-th-text-dim font-mono text-xs">{formatTs(e.timestamp)}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${methodColor(e.method)}`}>
+                            {e.method}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-th-text-sub font-mono text-xs">{e.path}</td>
+                        <td className={`px-4 py-2.5 whitespace-nowrap font-mono text-xs font-semibold ${statusColor(e.statusCode)}`}>{e.statusCode}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap text-th-text-dim font-mono text-xs">{e.ip}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap text-th-text-dim text-xs">{e.responseTimeMs}ms</td>
+                        <td className="px-4 py-2.5 text-th-text-faint text-xs truncate max-w-xs hidden lg:table-cell" title={e.userAgent}>{e.userAgent}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition text-th-text-sub disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </button>
+                  <span className="text-sm text-th-text-dim">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition text-th-text-sub disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -4,18 +4,20 @@ import App from './App.tsx';
 import QueuePage from './QueuePage.tsx';
 import BrowsePage from './BrowsePage.tsx';
 import LoginPage from './LoginPage.tsx';
+import UsagePage from './UsagePage.tsx';
 import './index.css';
 
 const SESSION_KEY = 'wd_token';
 
 // Build-time constant — rendered once, never changes at runtime.
 const VersionBadge = () => (
-  <span
-    className="fixed bottom-2 right-3 text-[10px] font-mono text-th-text-faint select-none opacity-50 hover:opacity-100 transition-opacity"
+  <a
+    href="#/usage"
+    className="fixed bottom-2 right-3 text-[10px] font-mono text-th-text-faint select-none opacity-50 hover:opacity-100 transition-opacity no-underline"
     title={`Version: ${__COMMIT_HASH__}`}
   >
     {__COMMIT_HASH__}
-  </span>
+  </a>
 );
 
 function Root() {
@@ -85,6 +87,10 @@ function Root() {
 
   if (hash === '#/browse') {
     return <><BrowsePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+  }
+
+  if (hash === '#/usage') {
+    return <><UsagePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
   return <><App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2, RefreshCw } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2, RefreshCw, HardDrive } from 'lucide-react';
 import { formatBytes, getMediaType } from './utils';
 import ThemeToggle from './ThemeToggle';
 
@@ -165,7 +165,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       {/* Sticky nav bar */}
       <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
         <div className="max-w-5xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-sm font-medium text-th-text-dim hover:text-th-text transition">File Manager</a>
+          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
           <div className="flex items-center gap-3">
             <nav className="flex items-center gap-1 text-sm">
               <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
