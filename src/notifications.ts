@@ -1,7 +1,18 @@
 const STORAGE_KEY = 'notifications_enabled';
 
-export function isNotificationSupported(): boolean {
-  return 'Notification' in window;
+export type NotificationStatus =
+  | { available: true; enabled: boolean }
+  | { available: false; reason: 'unsupported' | 'insecure-context' | 'denied' };
+
+export function getNotificationStatus(): NotificationStatus {
+  if (!('Notification' in window)) {
+    const reason = !self.isSecureContext ? 'insecure-context' : 'unsupported';
+    return { available: false, reason };
+  }
+  if (Notification.permission === 'denied') {
+    return { available: false, reason: 'denied' };
+  }
+  return { available: true, enabled: getNotificationPreference() };
 }
 
 export function getNotificationPreference(): boolean {
@@ -12,12 +23,12 @@ export function setNotificationPreference(enabled: boolean): void {
   localStorage.setItem(STORAGE_KEY, enabled ? 'true' : 'false');
 }
 
-export async function requestPermissionIfNeeded(): Promise<boolean> {
-  if (!isNotificationSupported()) return false;
-  if (Notification.permission === 'granted') return true;
-  if (Notification.permission === 'denied') return false;
+export async function requestPermissionIfNeeded(): Promise<'granted' | 'denied' | 'unsupported'> {
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'granted') return 'granted';
+  if (Notification.permission === 'denied') return 'denied';
   const result = await Notification.requestPermission();
-  return result === 'granted';
+  return result === 'granted' ? 'granted' : 'denied';
 }
 
 export function sendJobNotification(
@@ -25,7 +36,7 @@ export function sendJobNotification(
   status: 'done' | 'error',
   message?: string,
 ): void {
-  if (!isNotificationSupported()) return;
+  if (!('Notification' in window)) return;
   if (!getNotificationPreference()) return;
   if (Notification.permission !== 'granted') return;
 

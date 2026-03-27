@@ -7,6 +7,7 @@ import { formatBytes } from './utils';
 interface Config {
   folders: string[];
   allowedExtensions: string[];
+  freeSpace?: Record<string, number>;
 }
 
 interface DownloadJob {
@@ -376,7 +377,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 />
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
 
               <div>
                 <label htmlFor="filename" className="block text-sm font-medium text-th-text-sub mb-2">
@@ -447,7 +448,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 )}
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
 
               <div>
                 <label htmlFor="upload-filename" className="block text-sm font-medium text-th-text-sub mb-2">
@@ -545,7 +546,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 </div>
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
 
               <button
                 type="submit"
@@ -626,7 +627,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
 // ── Shared sub-components ────────────────────────────────────────────────────
 
-function FolderSelect({ folders, value, onChange }: { folders: string[]; value: string; onChange: (v: string) => void }) {
+function FolderSelect({ folders, value, onChange, freeSpace }: { folders: string[]; value: string; onChange: (v: string) => void; freeSpace?: Record<string, number> }) {
+  const free = freeSpace?.[value];
   return (
     <div>
       <label htmlFor="folder" className="block text-sm font-medium text-th-text-sub mb-2">
@@ -637,17 +639,22 @@ function FolderSelect({ folders, value, onChange }: { folders: string[]; value: 
           No folders configured. Set <code className="bg-th-bg-muted px-1 rounded">DOWNLOAD_FOLDERS</code> in your <code className="bg-th-bg-muted px-1 rounded">.env</code> file.
         </p>
       ) : (
-        <select
-          id="folder"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required
-          className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
-        >
-          {folders.map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
+        <>
+          <select
+            id="folder"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            required
+            className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
+          >
+            {folders.map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+          {free != null && (
+            <p className="text-sm text-th-text-dim mt-1">{formatBytes(free)} free</p>
+          )}
+        </>
       )}
     </div>
   );

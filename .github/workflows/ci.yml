@@ -33,7 +33,7 @@ jobs:
 
       # ── Typecheck ─────────────────────────────────────────────────────────────
       - name: Typecheck — frontend (tsconfig.app.json)
-        run: npm run typecheck
+        run: npm run tsc
 
       - name: Typecheck — server (tsconfig.server.json)
         run: npx tsc --noEmit -p tsconfig.server.json

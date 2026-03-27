@@ -5,8 +5,14 @@
  *   C1  No auth header when auth is enabled → 401
  *   C2  Valid token, folders + extensions configured → 200 with correct arrays
  *   C3  DOWNLOAD_FOLDERS not set → folders: []
+ *   C4  freeSpace returned for existing folders
+ *   C5  freeSpace omits folders that don't exist
  */
 
+import { rmSync } from 'fs';
+import { mkdtemp } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
 import request from 'supertest';
 import { buildApp } from '../../server/app';
 import { setEnv, resetEnv } from './helpers/env';
@@ -66,5 +72,41 @@ describe('GET /api/config — auth disabled', () => {
     expect(res.status).toBe(200);
     expect(res.body.folders).toEqual([]);
     expect(res.body.allowedExtensions).toEqual([]);
+  });
+
+  it('C4 — freeSpace returned for existing folders', async () => {
+    const tmpDir = await mkdtemp(path.join(tmpdir(), 'config-test-'));
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `tmp:${tmpDir}`,
+      ALLOWED_EXTENSIONS: undefined,
+    });
+    const app = buildApp();
+
+    try {
+      const res = await request(app).get('/api/config');
+
+      expect(res.status).toBe(200);
+      expect(res.body.freeSpace).toBeDefined();
+      expect(typeof res.body.freeSpace.tmp).toBe('number');
+      expect(res.body.freeSpace.tmp).toBeGreaterThan(0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('C5 — freeSpace omits folders that do not exist', async () => {
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: 'ghost:/tmp/does-not-exist-' + Date.now(),
+      ALLOWED_EXTENSIONS: undefined,
+    });
+    const app = buildApp();
+
+    const res = await request(app).get('/api/config');
+
+    expect(res.status).toBe(200);
+    expect(res.body.freeSpace).toBeDefined();
+    expect(res.body.freeSpace.ghost).toBeUndefined();
   });
 });

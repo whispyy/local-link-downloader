@@ -9,7 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "tsc": "tsc --noEmit -p tsconfig.app.json",
     "test:integration": "jest --config jest.integration.config.cjs",
     "test:integration:ci": "jest --config jest.integration.config.cjs --ci --forceExit"
   },

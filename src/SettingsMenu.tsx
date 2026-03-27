@@ -1,16 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus } from 'lucide-react';
 import {
-  isNotificationSupported,
-  getNotificationPreference,
+  getNotificationStatus,
   setNotificationPreference,
   requestPermissionIfNeeded,
+  NotificationStatus,
 } from './notifications';
 
 type Theme = 'light' | 'dark' | 'auto';
 const CYCLE: Theme[] = ['light', 'dark', 'auto'];
 const THEME_ICON = { light: Sun, dark: Moon, auto: Monitor } as const;
 const THEME_LABEL = { light: 'Light', dark: 'Dark', auto: 'Auto' } as const;
+
+const UNAVAILABLE_HINTS: Record<string, string> = {
+  'unsupported': 'Your browser does not support notifications',
+  'insecure-context': 'Notifications require HTTPS or localhost',
+  'denied': 'Notifications blocked — check your browser settings',
+};
 
 interface SettingsMenuProps {
   authEnabled: boolean;
@@ -26,7 +32,7 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
     return stored === 'light' || stored === 'dark' ? stored : 'auto';
   });
 
-  const [notifEnabled, setNotifEnabled] = useState(getNotificationPreference);
+  const [notifStatus, setNotifStatus] = useState<NotificationStatus>(getNotificationStatus);
 
   // Apply theme
   useEffect(() => {
@@ -47,6 +53,11 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
     }
   }, [theme]);
 
+  // Refresh status when menu opens (permission may have changed)
+  useEffect(() => {
+    if (open) setNotifStatus(getNotificationStatus());
+  }, [open]);
+
   // Close on outside click
   useEffect(() => {
     if (!open) return;
@@ -60,19 +71,50 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
   const cycleTheme = () => setTheme((t) => CYCLE[(CYCLE.indexOf(t) + 1) % CYCLE.length]);
 
   const toggleNotifications = async () => {
-    if (!notifEnabled) {
-      const granted = await requestPermissionIfNeeded();
-      if (!granted) return;
+    if (!notifStatus.available) return;
+
+    if (!notifStatus.enabled) {
+      const result = await requestPermissionIfNeeded();
+      if (result !== 'granted') {
+        setNotifStatus(getNotificationStatus());
+        return;
+      }
       setNotificationPreference(true);
-      setNotifEnabled(true);
+      setNotifStatus({ available: true, enabled: true });
     } else {
       setNotificationPreference(false);
-      setNotifEnabled(false);
+      setNotifStatus({ available: true, enabled: false });
     }
   };
 
   const ThemeIcon = THEME_ICON[theme];
-  const NotifIcon = notifEnabled ? Bell : BellOff;
+
+  const renderNotificationItem = () => {
+    if (!notifStatus.available) {
+      const hint = UNAVAILABLE_HINTS[notifStatus.reason];
+      const Icon = notifStatus.reason === 'insecure-context' ? ShieldOff : BellMinus;
+      return (
+        <div className="px-3 py-2">
+          <div className="flex items-center gap-2.5 text-sm text-th-text-faint">
+            <Icon className="w-4 h-4 shrink-0" />
+            <span>Notifications</span>
+          </div>
+          <p className="mt-1 ml-6.5 text-xs text-th-text-faint">{hint}</p>
+        </div>
+      );
+    }
+
+    const NotifIcon = notifStatus.enabled ? Bell : BellOff;
+    return (
+      <button
+        onClick={toggleNotifications}
+        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
+      >
+        <NotifIcon className="w-4 h-4" />
+        Notifications {notifStatus.enabled ? 'on' : 'off'}
+      </button>
+    );
+  };
 
   return (
     <div className="relative flex items-center" ref={menuRef}>
@@ -85,7 +127,7 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 z-50">
+        <div className="absolute right-0 top-full mt-1 w-52 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 z-50">
           <button
             onClick={cycleTheme}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
@@ -94,15 +136,7 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
             Theme: {THEME_LABEL[theme]}
           </button>
 
-          {isNotificationSupported() && (
-            <button
-              onClick={toggleNotifications}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
-            >
-              <NotifIcon className="w-4 h-4" />
-              Notifications {notifEnabled ? 'on' : 'off'}
-            </button>
-          )}
+          {renderNotificationItem()}
 
           {authEnabled && (
             <>

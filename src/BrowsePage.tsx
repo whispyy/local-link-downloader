@@ -32,6 +32,7 @@ function formatDate(iso: string) {
 
 export default function BrowsePage({ token, onUnauthorized, authEnabled }: BrowsePageProps) {
   const [folders, setFolders] = useState<string[]>([]);
+  const [freeSpace, setFreeSpace] = useState<Record<string, number>>({});
   const [folderKey, setFolderKey] = useState('');
   const [transcodingAvailable, setTranscodingAvailable] = useState(false);
   const [transcoding, setTranscoding] = useState(false);
@@ -58,6 +59,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       .then(data => {
         if (!data) return;
         setFolders(data.folders);
+        if (data.freeSpace) setFreeSpace(data.freeSpace);
         if (data.folders.length > 0) setFolderKey(data.folders[0]);
         const tc = data.transcoding ?? false;
         setTranscodingAvailable(tc);
@@ -188,15 +190,20 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         {/* Folder selector + transcoding toggle */}
         <div className="flex flex-wrap items-center gap-4 mb-4">
           {folders.length > 0 && (
-            <select
-              value={folderKey}
-              onChange={(e) => handleFolderChange(e.target.value)}
-              className="px-4 py-2 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text text-sm"
-            >
-              {folders.map(f => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-3">
+              <select
+                value={folderKey}
+                onChange={(e) => handleFolderChange(e.target.value)}
+                className="px-4 py-2 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text text-sm"
+              >
+                {folders.map(f => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+              {freeSpace[folderKey] != null && (
+                <span className="text-xs text-th-text-dim">{formatBytes(freeSpace[folderKey])} free</span>
+              )}
+            </div>
           )}
           {transcodingAvailable && (
             <label className="flex items-center gap-2 text-sm text-th-text-sub cursor-pointer select-none">

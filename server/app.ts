@@ -14,7 +14,7 @@ import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
-import { writeFile, appendFile, unlink, readdir, stat } from 'fs/promises';
+import { writeFile, appendFile, unlink, readdir, stat, statfs } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -279,7 +279,7 @@ export function buildApp() {
   });
 
   // ── GET /api/config ─────────────────────────────────────────────────────────
-  app.get('/api/config', authMiddleware, (_req, res) => {
+  app.get('/api/config', authMiddleware, async (_req, res) => {
     const downloadFoldersEnv = process.env.DOWNLOAD_FOLDERS || '';
     const allowedExtensionsEnv = process.env.ALLOWED_EXTENSIONS || '';
     const folderMapping = parseFolderMapping(downloadFoldersEnv);
@@ -289,8 +289,22 @@ export function buildApp() {
       .map((ext) => ext.trim())
       .filter((ext) => ext.length > 0);
     const transcoding = process.env.ENABLE_TRANSCODING === 'true';
+
+    // Get free space for each folder
+    const freeSpace: Record<string, number> = {};
+    await Promise.all(
+      Array.from(folderMapping.entries()).map(async ([key, folderPath]) => {
+        try {
+          const stats = await statfs(folderPath);
+          freeSpace[key] = stats.bavail * stats.bsize;
+        } catch {
+          // Folder may not exist yet or be inaccessible
+        }
+      }),
+    );
+
     log('INFO', 'Config requested', { folders, allowedExtensions, transcoding });
-    res.json({ folders, allowedExtensions, transcoding });
+    res.json({ folders, allowedExtensions, transcoding, freeSpace });
   });
 
   // ── GET /api/usage ────────────────────────────────────────────────────────
