@@ -170,7 +170,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <nav className="flex items-center gap-1 text-sm">
               <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
               <a href="#/browse" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Browse</a>
-              <a href="#/admin" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Admin</a>
+              <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
             </nav>
             <ThemeToggle />
             {authEnabled && (

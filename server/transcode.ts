@@ -128,7 +128,7 @@ const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const cache = new Map<string, CacheEntry>();
 
 export function startCacheCleanup(log: LogFn) {
-  setInterval(() => {
+  const timer = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of cache) {
       if (entry.ready && now - entry.lastAccess > CACHE_TTL_MS) {
@@ -138,6 +138,8 @@ export function startCacheCleanup(log: LogFn) {
       }
     }
   }, CLEANUP_INTERVAL_MS);
+  // Don't block process exit (important for tests)
+  timer.unref();
 }
 
 // ─── Serve with Range support ────────────────────────────────────────────────

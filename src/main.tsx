@@ -1,7 +1,7 @@
 import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
-import AdminPage from './AdminPage.tsx';
+import QueuePage from './QueuePage.tsx';
 import BrowsePage from './BrowsePage.tsx';
 import LoginPage from './LoginPage.tsx';
 import './index.css';
@@ -79,8 +79,8 @@ function Root() {
 
   const authEnabled = token !== 'no-auth';
 
-  if (hash === '#/admin') {
-    return <><AdminPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+  if (hash === '#/queue') {
+    return <><QueuePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
   if (hash === '#/browse') {

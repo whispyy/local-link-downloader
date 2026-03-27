@@ -7,7 +7,7 @@ const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
 
 type JobStatus = 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
 
-interface AdminJob {
+interface QueueJob {
   id: string;
   url: string;
   status: JobStatus;
@@ -20,7 +20,7 @@ interface AdminJob {
   updated_at: string;
 }
 
-interface AdminPageProps {
+interface QueuePageProps {
   token: string;
   onUnauthorized: () => void;
   authEnabled: boolean;
@@ -67,7 +67,7 @@ function formatDate(iso: string) {
 }
 
 
-function SizeCell({ job }: { job: AdminJob }) {
+function SizeCell({ job }: { job: QueueJob }) {
   if (job.status === 'queued') return <span className="text-th-text-faint">—</span>;
 
   if (job.status === 'downloading') {
@@ -91,8 +91,8 @@ function SizeCell({ job }: { job: AdminJob }) {
   return <span className="text-th-text-faint">—</span>;
 }
 
-export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminPageProps) {
-  const [jobs, setJobs] = useState<AdminJob[]>([]);
+export default function QueuePage({ token, onUnauthorized, authEnabled }: QueuePageProps) {
+  const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [filter, setFilter] = useState<JobStatus | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +146,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
       }
-      const data: AdminJob[] = await response.json();
+      const data: QueueJob[] = await response.json();
       setJobs(data);
       setError(null);
       setLastRefreshed(new Date());
@@ -184,7 +184,7 @@ export default function AdminPage({ token, onUnauthorized, authEnabled }: AdminP
             <nav className="flex items-center gap-1 text-sm">
               <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
               <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
-              <a href="#/admin" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Admin</a>
+              <a href="#/queue" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Queue</a>
             </nav>
             <ThemeToggle />
             {authEnabled && (

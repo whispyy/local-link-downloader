@@ -5,7 +5,7 @@ A self-hosted web UI for downloading files from URLs, uploading local files, or 
 - **Frontend** — React + Vite + Tailwind CSS
 - **Backend** — Express (TypeScript), runs on Node.js
 - **Browse page** — `#/browse` — browse downloaded files with media preview (video, audio, image, text)
-- **Admin page** — `#/admin` — live job list with status filter, progress display, and stop button
+- **Queue page** — `#/queue` — live job list with status filter, progress display, and stop button
 
 **Published image:** `ghcr.io/whispyy/local-link-downloader:latest`
 
@@ -19,12 +19,12 @@ A self-hosted web UI for downloading files from URLs, uploading local files, or 
 | **Upload from local file** | Drag-and-drop or browse to upload a file directly from your browser |
 | **Torrent download** | Paste a magnet link or drop a `.torrent` file; downloads via BitTorrent with live peer count and speed |
 | **Download progress** | Live progress bar with bytes downloaded / total size and percentage |
-| **Cancel / stop** | Cancel a queued or in-progress download (including torrents) from the main UI or the Admin page |
+| **Cancel / stop** | Cancel a queued or in-progress download (including torrents) from the main UI or the Queue page |
 | **Multiple destination folders** | Configure any number of named folders via `DOWNLOAD_FOLDERS` |
 | **Extension allow-list** | Optionally restrict which file extensions are accepted (HTTP/upload only — does not apply to torrents) |
 | **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
 | **Browse files** | `#/browse` page lists files in each folder with size, date, media preview (video/audio/image/text), direct download, and delete |
-| **Admin job list** | `#/admin` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
+| **Queue job list** | `#/queue` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
 | **Persistent logs** | Every download/upload/torrent is appended to `logs/downloads.log` |
 
 ---
@@ -166,7 +166,7 @@ Edit `docker-compose.yml` and adjust:
 ```
 ├── src/                  # React frontend
 │   ├── App.tsx           # Main downloader UI (URL, upload, torrent tabs)
-│   ├── AdminPage.tsx     # /admin job list page
+│   ├── QueuePage.tsx     # /queue job list page
 │   ├── BrowsePage.tsx    # /browse file browser with media preview
 │   ├── LoginPage.tsx     # Password prompt (when APP_PASSWORD is set)
 │   └── main.tsx          # Hash-based router
