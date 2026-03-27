@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, LogOut, ClipboardList, HardDrive } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList, HardDrive } from 'lucide-react';
 import { formatBytes } from './utils';
-import ThemeToggle from './ThemeToggle';
+import SettingsMenu from './SettingsMenu';
+import { sendJobNotification } from './notifications';
 
 const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
 
@@ -99,6 +100,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const prevStatusMapRef = useRef<Map<string, JobStatus>>(new Map());
 
   const toggleExpand = useCallback((jobId: string) => {
     setExpandedIds((prev) => {
@@ -147,6 +149,24 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
         throw new Error(`Server returned ${response.status}`);
       }
       const data: QueueJob[] = await response.json();
+
+      // Detect state transitions and notify
+      const prevMap = prevStatusMapRef.current;
+      if (prevMap.size > 0) {
+        for (const job of data) {
+          const prev = prevMap.get(job.id);
+          if (
+            (job.status === 'done' || job.status === 'error') &&
+            prev !== undefined && prev !== 'done' && prev !== 'error' && prev !== 'cancelled'
+          ) {
+            sendJobNotification(job.filename, job.status, job.message);
+          }
+        }
+      }
+      const nextMap = new Map<string, JobStatus>();
+      for (const job of data) nextMap.set(job.id, job.status);
+      prevStatusMapRef.current = nextMap;
+
       setJobs(data);
       setError(null);
       setLastRefreshed(new Date());
@@ -186,12 +206,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
               <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
               <a href="#/queue" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Queue</a>
             </nav>
-            <ThemeToggle />
-            {authEnabled && (
-              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
           </div>
         </div>
       </header>

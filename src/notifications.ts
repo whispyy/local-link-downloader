@@ -1,0 +1,38 @@
+const STORAGE_KEY = 'notifications_enabled';
+
+export function isNotificationSupported(): boolean {
+  return 'Notification' in window;
+}
+
+export function getNotificationPreference(): boolean {
+  return localStorage.getItem(STORAGE_KEY) === 'true';
+}
+
+export function setNotificationPreference(enabled: boolean): void {
+  localStorage.setItem(STORAGE_KEY, enabled ? 'true' : 'false');
+}
+
+export async function requestPermissionIfNeeded(): Promise<boolean> {
+  if (!isNotificationSupported()) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  const result = await Notification.requestPermission();
+  return result === 'granted';
+}
+
+export function sendJobNotification(
+  filename: string,
+  status: 'done' | 'error',
+  message?: string,
+): void {
+  if (!isNotificationSupported()) return;
+  if (!getNotificationPreference()) return;
+  if (Notification.permission !== 'granted') return;
+
+  const title = status === 'done' ? 'Download complete' : 'Download failed';
+  const body = status === 'done'
+    ? filename
+    : `${filename}${message ? ': ' + message : ''}`;
+
+  new Notification(title, { body, icon: '/pwa-192x192.png', tag: `job-${filename}-${status}` });
+}

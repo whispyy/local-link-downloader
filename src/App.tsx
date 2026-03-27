@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, LogOut, HardDrive } from 'lucide-react';
-import ThemeToggle from './ThemeToggle';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, HardDrive } from 'lucide-react';
+import SettingsMenu from './SettingsMenu';
+import { sendJobNotification } from './notifications';
 import { formatBytes } from './utils';
 
 interface Config {
@@ -54,6 +55,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [currentJob, setCurrentJob] = useState<DownloadJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
+  const prevJobStatusRef = useRef<string | null>(null);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -90,6 +92,16 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       if (response.status === 401) { onUnauthorized(); return; }
       if (!response.ok) return;
       const data = await response.json();
+
+      const prev = prevJobStatusRef.current;
+      if (
+        (data.status === 'done' || data.status === 'error') &&
+        prev !== null && prev !== 'done' && prev !== 'error' && prev !== 'cancelled'
+      ) {
+        sendJobNotification(data.filename || 'Unknown file', data.status, data.message);
+      }
+      prevJobStatusRef.current = data.status;
+
       setCurrentJob(data);
     } catch (error) {
       console.error('Failed to poll status:', error);
@@ -108,6 +120,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       });
       if (response.status === 401) { onUnauthorized(); return; }
       const data = await response.json();
+      prevJobStatusRef.current = response.ok ? data.status : 'error';
       setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start download' });
     } catch (error) {
       setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
@@ -137,6 +150,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       total_bytes: selectedFile.size,
       downloaded_bytes: 0,
     };
+    prevJobStatusRef.current = 'downloading';
     setCurrentJob(uploadingJob);
     setIsSubmitting(true);
 
@@ -149,6 +163,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       }
     });
 
+    const uploadName = uploadFilenameOverride || selectedFile.name;
     xhr.addEventListener('load', () => {
       xhrRef.current = null;
       setIsSubmitting(false);
@@ -157,11 +172,15 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
         const data = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) {
           setCurrentJob((prev) => prev ? { ...prev, ...data, status: 'done', downloaded_bytes: prev.total_bytes } : prev);
+          sendJobNotification(uploadName, 'done');
         } else {
-          setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: data.error || 'Upload failed' } : prev);
+          const msg = data.error || 'Upload failed';
+          setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: msg } : prev);
+          sendJobNotification(uploadName, 'error', msg);
         }
       } catch {
         setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Invalid server response' } : prev);
+        sendJobNotification(uploadName, 'error', 'Invalid server response');
       }
     });
 
@@ -169,6 +188,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       xhrRef.current = null;
       setIsSubmitting(false);
       setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Network error' } : prev);
+      sendJobNotification(uploadName, 'error', 'Network error');
     });
 
     xhr.open('POST', '/api/upload');
@@ -201,6 +221,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       }
       if (response.status === 401) { onUnauthorized(); return; }
       const data = await response.json();
+      prevJobStatusRef.current = response.ok ? data.status : 'error';
       setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start torrent' });
     } catch (error) {
       setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
@@ -261,6 +282,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     if (xhrRef.current) { xhrRef.current.abort(); xhrRef.current = null; }
     setIsSubmitting(false);
     setCurrentJob(null);
+    prevJobStatusRef.current = null;
     setUrl('');
     setFilenameOverride('');
     setSelectedFile(null);
@@ -275,7 +297,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       {/* Sticky nav bar */}
       <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
-        <div className="max-w-2xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
+        <div className="max-w-5xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
           <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
           <div className="flex items-center gap-3">
             <nav className="flex items-center gap-1 text-sm">
@@ -283,12 +305,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
               <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
             </nav>
-            <ThemeToggle />
-            {authEnabled && (
-              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
           </div>
         </div>
       </header>

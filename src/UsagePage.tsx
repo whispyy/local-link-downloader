@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, Loader2, LogOut, RefreshCw, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
-import ThemeToggle from './ThemeToggle';
+import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
+import SettingsMenu from './SettingsMenu';
 
 interface UsageEntry {
   timestamp: string;
@@ -115,12 +115,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
               <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
               <a href="#/usage" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Usage</a>
             </nav>
-            <ThemeToggle />
-            {authEnabled && (
-              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
           </div>
         </div>
       </header>
