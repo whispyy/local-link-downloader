@@ -655,7 +655,6 @@ export function buildApp() {
         jj.updatedAt = new Date().toISOString();
       }, 500);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       torrent.on('done', () => {
         clearInterval(progressInterval);
         const jj = jobs.get(jobId);

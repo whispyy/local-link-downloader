@@ -9,7 +9,7 @@
 import express from 'express';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
-import { createReadStream, existsSync, statSync } from 'fs';
+import { createReadStream, statSync } from 'fs';
 import { unlink } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import os from 'os';

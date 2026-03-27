@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, LogOut, Trash2, RefreshCw, HardDrive } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, HardDrive } from 'lucide-react';
 import { formatBytes, getMediaType } from './utils';
-import ThemeToggle from './ThemeToggle';
+import SettingsMenu from './SettingsMenu';
 
 interface BrowseFile {
   name: string;
@@ -172,12 +172,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
               <a href="#/browse" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Browse</a>
               <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
             </nav>
-            <ThemeToggle />
-            {authEnabled && (
-              <button onClick={onUnauthorized} className="text-th-text-faint hover:text-th-text-sub transition" title="Sign out">
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
           </div>
         </div>
       </header>
