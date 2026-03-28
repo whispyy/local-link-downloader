@@ -20,6 +20,21 @@ interface UsagePageProps {
 
 const PAGE_SIZE = 50;
 
+type DatePreset = 'day' | 'week' | 'month' | 'year' | 'custom';
+
+function presetRange(preset: Exclude<DatePreset, 'custom'>): { from: string; to: string } {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
+  const start = new Date(now);
+  switch (preset) {
+    case 'day':   start.setHours(0, 0, 0, 0); break;
+    case 'week':  start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0); break;
+    case 'month': start.setMonth(start.getMonth() - 1); start.setHours(0, 0, 0, 0); break;
+    case 'year':  start.setFullYear(start.getFullYear() - 1); start.setHours(0, 0, 0, 0); break;
+  }
+  return { from: toLocalDatetime(start), to: toLocalDatetime(end) };
+}
+
 function methodColor(method: string) {
   switch (method) {
     case 'GET':    return 'bg-blue-500/15 text-blue-600';
@@ -54,12 +69,11 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Date filter — default to today start-of-day / end-of-day
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
-  const [from, setFrom] = useState(toLocalDatetime(todayStart));
-  const [to, setTo] = useState(toLocalDatetime(todayEnd));
+  // Date filter
+  const [datePreset, setDatePreset] = useState<DatePreset>('day');
+  const initRange = presetRange('day');
+  const [from, setFrom] = useState(initRange.from);
+  const [to, setTo] = useState(initRange.to);
   const [pathInput, setPathInput] = useState('');
   const [pathFilter, setPathFilter] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,39 +151,98 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
             </div>
           </div>
 
-          {/* Date filter */}
-          <div className="flex flex-wrap items-end gap-3 mb-4">
-            <div>
-              <label className="block text-xs font-medium text-th-text-dim mb-1">From</label>
-              <input
-                type="datetime-local"
-                value={from}
-                onChange={(e) => { setFrom(e.target.value); setPage(1); }}
-                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
-              />
+          {/* Filters */}
+          <div className="bg-th-bg rounded-lg border border-th-border-light p-3 sm:p-4 mb-4 space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              {/* Period segmented control */}
+              <div>
+                <span className="block text-[10px] uppercase tracking-wider font-medium text-th-text-faint mb-1">Period</span>
+                <div className="flex rounded-lg border border-th-border-light overflow-hidden">
+                {([['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year'], ['custom', 'Custom']] as const).map(([key, label], i, arr) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setDatePreset(key);
+                      if (key !== 'custom') {
+                        const r = presetRange(key);
+                        setFrom(r.from);
+                        setTo(r.to);
+                        setPage(1);
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs font-medium transition ${
+                      i < arr.length - 1 ? 'border-r border-th-border-light' : ''
+                    } ${
+                      datePreset === key
+                        ? 'bg-th-btn text-th-btn-text'
+                        : 'bg-th-bg-alt text-th-text-dim hover:text-th-text'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                </div>
+              </div>
+
+              {/* Endpoint segmented control */}
+              <div>
+                <span className="block text-[10px] uppercase tracking-wider font-medium text-th-text-faint mb-1">Endpoint</span>
+                <div className="flex rounded-lg border border-th-border-light overflow-hidden">
+                {['auth', 'download', 'upload', 'browse'].map((s, i, arr) => {
+                  const value = `/api/${s}`;
+                  const active = pathFilter === value;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        const next = active ? '' : value;
+                        setPathInput(next);
+                        setPathFilter(next);
+                        setPage(1);
+                      }}
+                      className={`px-3 py-1.5 text-xs font-medium transition ${
+                        i < arr.length - 1 ? 'border-r border-th-border-light' : ''
+                      } ${
+                        active
+                          ? 'bg-th-btn text-th-btn-text'
+                          : 'bg-th-bg-alt text-th-text-dim hover:text-th-text'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+                </div>
+              </div>
+
+              <span className="text-xs text-th-text-faint ml-auto self-end pb-1 tabular-nums">
+                {total} request{total !== 1 ? 's' : ''}
+              </span>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-th-text-dim mb-1">To</label>
-              <input
-                type="datetime-local"
-                value={to}
-                onChange={(e) => { setTo(e.target.value); setPage(1); }}
-                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-th-text-dim mb-1">Endpoint</label>
-              <input
-                type="text"
-                value={pathInput}
-                onChange={(e) => handlePathChange(e.target.value)}
-                placeholder="/api/download"
-                className="px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg text-th-text placeholder:text-th-text-faint focus:outline-none focus:ring-1 focus:ring-th-ring w-44"
-              />
-            </div>
-            <span className="text-xs text-th-text-faint self-end pb-2">
-              {total} request{total !== 1 ? 's' : ''} found
-            </span>
+
+            {/* Custom date range */}
+            {datePreset === 'custom' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-th-text-dim mb-1">From</label>
+                  <input
+                    type="datetime-local"
+                    value={from}
+                    onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+                    className="w-full px-3 py-1.5 text-sm bg-th-bg-alt border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-th-text-dim mb-1">To</label>
+                  <input
+                    type="datetime-local"
+                    value={to}
+                    onChange={(e) => { setTo(e.target.value); setPage(1); }}
+                    className="w-full px-3 py-1.5 text-sm bg-th-bg-alt border border-th-border-light rounded-lg text-th-text focus:outline-none focus:ring-1 focus:ring-th-ring"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Content */}

@@ -36,18 +36,20 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
 
   // Apply theme
   useEffect(() => {
+    const applyDark = (isDark: boolean) => {
+      document.documentElement.classList.toggle('dark', isDark);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isDark ? '#0f172a' : '#f8fafc');
+    };
+
     localStorage.setItem('theme', theme);
     const isDark =
       theme === 'dark' ||
       (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.classList.toggle('dark', isDark);
+    applyDark(isDark);
 
     if (theme === 'auto') {
       const mq = matchMedia('(prefers-color-scheme: dark)');
-      const handler = () => {
-        const d = mq.matches;
-        document.documentElement.classList.toggle('dark', d);
-      };
+      const handler = () => applyDark(mq.matches);
       mq.addEventListener('change', handler);
       return () => mq.removeEventListener('change', handler);
     }
@@ -120,7 +122,7 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
     <div className="relative flex items-center" ref={menuRef}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="text-th-text-faint hover:text-th-text-sub transition"
+        className="-m-2 p-2 text-th-text-faint hover:text-th-text-sub transition"
         title="Settings"
       >
         <Settings className="w-4 h-4" />

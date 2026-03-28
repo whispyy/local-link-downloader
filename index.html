@@ -6,8 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>File Manager</title>
     <meta name="description" content="Download, upload, and manage files" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f172a" />
+    <meta name="theme-color" content="#f8fafc" />
 
     <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -19,6 +18,7 @@
         var t = localStorage.getItem('theme');
         var d = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         if (d) document.documentElement.classList.add('dark');
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', d ? '#0f172a' : '#f8fafc');
       })();
     </script>
   </head>
