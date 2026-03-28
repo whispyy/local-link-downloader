@@ -224,7 +224,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
         {/* Error */}
         {error && (
-          <div className="p-4 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="p-4 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-600">
             {error}
           </div>
         )}
@@ -318,7 +318,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               <button
                                 onClick={() => handleDelete(file.name)}
                                 disabled={deleting}
-                                className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition disabled:opacity-50"
+                                className="px-2 py-1 rounded text-xs font-medium bg-red-500/15 text-red-600 hover:bg-red-500/25 transition disabled:opacity-50"
                               >
                                 {deleting ? 'Deleting…' : 'Delete'}
                               </button>
@@ -341,7 +341,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               </a>
                               <button
                                 onClick={() => setConfirmDelete(file.name)}
-                                className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-100 transition"
+                                className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
                                 title="Delete"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -364,7 +364,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="w-4 h-4" /> Prev
             </button>
@@ -374,7 +374,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next <ChevronRight className="w-4 h-4" />
             </button>

@@ -322,7 +322,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
           </div>
 
           {configError && (
-            <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <div className="mb-5 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-600">
               {configError}
             </div>
           )}
@@ -418,7 +418,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   isDragging
                     ? 'border-th-border bg-th-bg-alt'
                     : selectedFile
-                    ? 'border-green-400 bg-green-50'
+                    ? 'border-green-500/50 bg-green-500/10'
                     : 'border-th-border hover:border-th-border hover:bg-th-bg-alt'
                 }`}
               >
@@ -520,7 +520,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                       : isDraggingTorrent
                       ? 'border-th-border bg-th-bg-alt cursor-pointer'
                       : torrentFile
-                      ? 'border-green-400 bg-green-50 cursor-pointer'
+                      ? 'border-green-500/50 bg-green-500/10 cursor-pointer'
                       : 'border-th-border hover:border-th-border hover:bg-th-bg-alt cursor-pointer'
                   }`}
                 >

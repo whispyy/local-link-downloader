@@ -22,11 +22,11 @@ const PAGE_SIZE = 50;
 
 function methodColor(method: string) {
   switch (method) {
-    case 'GET':    return 'bg-blue-100 text-blue-700';
-    case 'POST':   return 'bg-green-100 text-green-700';
-    case 'DELETE':  return 'bg-red-100 text-red-700';
-    case 'PUT':    return 'bg-amber-100 text-amber-700';
-    case 'PATCH':  return 'bg-purple-100 text-purple-700';
+    case 'GET':    return 'bg-blue-500/15 text-blue-600';
+    case 'POST':   return 'bg-green-500/15 text-green-600';
+    case 'DELETE':  return 'bg-red-500/15 text-red-600';
+    case 'PUT':    return 'bg-amber-500/15 text-amber-600';
+    case 'PATCH':  return 'bg-purple-500/15 text-purple-600';
     default:       return 'bg-th-bg-muted text-th-text-dim';
   }
 }
@@ -179,7 +179,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
               Loading usage data...
             </div>
           ) : error ? (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-600">
               {error}
             </div>
           ) : entries.length === 0 ? (

@@ -38,10 +38,10 @@ const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
 
 function StatusBadge({ status }: { status: JobStatus }) {
   const styles: Record<JobStatus, string> = {
-    queued: 'bg-blue-100 text-blue-700',
-    downloading: 'bg-yellow-100 text-yellow-700',
-    done: 'bg-green-100 text-green-700',
-    error: 'bg-red-100 text-red-700',
+    queued: 'bg-blue-500/15 text-blue-600',
+    downloading: 'bg-yellow-500/15 text-yellow-600',
+    done: 'bg-green-500/15 text-green-600',
+    error: 'bg-red-500/15 text-red-600',
     cancelled: 'bg-th-bg-muted text-th-text-dim',
   };
 
@@ -264,7 +264,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
             Loading jobs…
           </div>
         ) : error ? (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-600">
             {error}
           </div>
         ) : filtered.length === 0 ? (
@@ -308,7 +308,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                                 onClick={() => handleStop(job.id)}
                                 disabled={stoppingIds.has(job.id)}
                                 title="Stop and remove"
-                                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {stoppingIds.has(job.id)
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
