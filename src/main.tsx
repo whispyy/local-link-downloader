@@ -22,7 +22,7 @@ const VersionBadge = () => (
 
 function Root() {
   const [hash, setHash] = useState(window.location.hash);
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(SESSION_KEY));
   const [authChecked, setAuthChecked] = useState(false);
 
   // On mount, verify whether auth is required by calling /api/auth with no body.
@@ -44,7 +44,7 @@ function Root() {
       .then((data) => {
         if (data.token === 'no-auth') {
           // Auth is disabled — store the dummy token and proceed
-          sessionStorage.setItem(SESSION_KEY, 'no-auth');
+          localStorage.setItem(SESSION_KEY, 'no-auth');
           setToken('no-auth');
         }
       })
@@ -61,12 +61,12 @@ function Root() {
   }, []);
 
   const handleLogin = (newToken: string) => {
-    sessionStorage.setItem(SESSION_KEY, newToken);
+    localStorage.setItem(SESSION_KEY, newToken);
     setToken(newToken);
   };
 
   const handleUnauthorized = () => {
-    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
     setToken(null);
   };
 
