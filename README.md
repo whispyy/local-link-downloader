@@ -25,6 +25,8 @@ A self-hosted web UI for downloading files from URLs, uploading local files, or 
 | **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
 | **Browse files** | `#/browse` page lists files in each folder with size, date, media preview (video/audio/image/text), direct download, and delete |
 | **Queue job list** | `#/queue` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
+| **Discord notifications** | Optional webhook — get notified on download/upload/torrent start and completion |
+| **PWA update prompt** | When a new version is deployed, an "Update available" button appears in settings |
 | **Persistent logs** | Every download/upload/torrent is appended to `logs/downloads.log` |
 
 ---
@@ -50,6 +52,7 @@ services:
       DOWNLOAD_FOLDERS: "images:/downloads/images;videos:/downloads/videos"
       ALLOWED_EXTENSIONS: ".jpg,.png,.gif,.zip,.mp4,.pdf"
       APP_PASSWORD: "your_secret_password"
+      DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/..."
     volumes:
       - /mnt/nas/images:/downloads/images
       - /mnt/nas/videos:/downloads/videos
@@ -157,6 +160,7 @@ Edit `docker-compose.yml` and adjust:
 | `MAX_UPLOAD_SIZE` | `10gb` | Maximum file size for direct browser uploads. Accepts `b`, `kb`, `mb`, `gb` units |
 | `LOG_DIR` | `./logs` | Directory where `downloads.log` is written |
 | `APP_PASSWORD` | _(unset — auth disabled)_ | When set, a password prompt is shown on every new browser session. Sessions last 8 hours. |
+| `DISCORD_WEBHOOK_URL` | _(unset — disabled)_ | Discord webhook URL. When set, sends notifications on download/upload/torrent start and completion |
 | `STATIC_DIR` | _(empty)_ | When set, Express serves the built frontend from this path (set automatically in Docker) |
 
 ---
