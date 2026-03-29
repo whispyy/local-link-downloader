@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus, RefreshCw } from 'lucide-react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   getNotificationStatus,
   setNotificationPreference,
@@ -26,6 +27,11 @@ interface SettingsMenuProps {
 export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
 
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem('theme');
@@ -130,6 +136,16 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
 
       {open && (
         <div className="absolute right-0 top-full mt-1 w-52 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 z-50">
+          {needRefresh && (
+            <button
+              onClick={() => updateServiceWorker(true)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Update available
+            </button>
+          )}
+
           <button
             onClick={cycleTheme}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
