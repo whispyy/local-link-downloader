@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
 import SettingsMenu from './SettingsMenu';
 
@@ -74,20 +74,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
   const initRange = presetRange('day');
   const [from, setFrom] = useState(initRange.from);
   const [to, setTo] = useState(initRange.to);
-  const [pathInput, setPathInput] = useState('');
   const [pathFilter, setPathFilter] = useState('');
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handlePathChange = (value: string) => {
-    setPathInput(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setPathFilter(value);
-      setPage(1);
-    }, 400);
-  };
-
-  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -196,7 +183,6 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
                       key={s}
                       onClick={() => {
                         const next = active ? '' : value;
-                        setPathInput(next);
                         setPathFilter(next);
                         setPage(1);
                       }}
