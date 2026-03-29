@@ -18,6 +18,7 @@ import { writeFile, appendFile, unlink, readdir, stat, statfs } from 'fs/promise
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
+import { notifyDiscord } from './notifier';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -422,6 +423,7 @@ export function buildApp() {
 
     jobs.set(jobId, job);
     log('INFO', 'Download job created', { jobId, url, folderKey, filename });
+    notifyDiscord(`⬇️ Download started: **${filename}** → \`${folderKey}\``);
 
     setImmediate(async () => {
       const j = jobs.get(jobId)!;
@@ -453,10 +455,12 @@ export function buildApp() {
         j.totalBytes = result.totalBytes;
         j.message = `Downloaded to ${fullPath}`;
         log('INFO', 'Download completed', { jobId, fullPath });
+        notifyDiscord(`✅ Download completed: **${j.filename}** → \`${j.folderKey}\``);
       } else {
         j.status = 'error';
         j.message = result.message;
         log('ERROR', 'Download failed', { jobId, error: result.message });
+        notifyDiscord(`❌ Download failed: **${j.filename}** → \`${j.folderKey}\``);
       }
 
       // .unref() prevents this timer from keeping the Node process alive in tests
@@ -543,6 +547,8 @@ export function buildApp() {
       mkdirSync(destinationFolder, { recursive: true });
     }
 
+    notifyDiscord(`⬆️ Upload started: **${filename}** → \`${folderKey}\``);
+
     try {
       await writeFile(fullPath, req.file.buffer);
     } catch (err) {
@@ -566,6 +572,7 @@ export function buildApp() {
     };
     jobs.set(jobId, job);
     log('INFO', 'File uploaded', { jobId, filename, folderKey, fullPath });
+    notifyDiscord(`✅ Upload completed: **${filename}** → \`${folderKey}\``);
     setTimeout(() => jobs.delete(jobId), 24 * 60 * 60 * 1000).unref();
 
     res.json({
@@ -624,6 +631,7 @@ export function buildApp() {
 
     jobs.set(jobId, job);
     log('INFO', 'Torrent job created', { jobId, folderKey });
+    notifyDiscord(`🧲 Torrent started → \`${folderKey}\``);
 
     setImmediate(() => {
       const j = jobs.get(jobId);
@@ -683,6 +691,7 @@ export function buildApp() {
         jj.torrentRef = undefined;
         jj.updatedAt = new Date().toISOString();
         log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
+        notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\``);
         torrent.destroy();
         setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
       });
@@ -697,6 +706,7 @@ export function buildApp() {
         jj.torrentRef = undefined;
         jj.updatedAt = new Date().toISOString();
         log('ERROR', 'Torrent error', { jobId, error: jj.message });
+        notifyDiscord(`❌ Torrent failed: **${jj.filename || 'unknown'}** → \`${folderKey}\``);
         setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
       });
     });

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"npm run server\"",
+    "start": "concurrently \"vite\" \"npm run server\"",
     "server": "ts-node --project tsconfig.server.json server/index.ts",
     "build": "vite build",
     "lint": "eslint .",
