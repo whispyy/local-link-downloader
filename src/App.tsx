@@ -43,6 +43,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadFilenameOverride, setUploadFilenameOverride] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Torrent mode state
@@ -231,6 +232,24 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     }
   };
 
+  // ── File validation ────────────────────────────────────────────────────────
+  const validateFileExtension = (file: File): boolean => {
+    const exts = config.allowedExtensions;
+    if (exts.length === 0) return true;
+    const dotIdx = file.name.lastIndexOf('.');
+    if (dotIdx === -1) {
+      setUploadError('File has no extension. An extension is required.');
+      return false;
+    }
+    const fileExt = file.name.substring(dotIdx).toLowerCase();
+    if (!exts.map(e => e.toLowerCase()).includes(fileExt)) {
+      setUploadError(`File type ${fileExt} is not allowed. Allowed: ${exts.join(', ')}`);
+      return false;
+    }
+    setUploadError(null);
+    return true;
+  };
+
   // ── Drag-and-drop handlers ──────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -246,12 +265,27 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) setSelectedFile(file);
-  }, []);
+    if (file) {
+      if (validateFileExtension(file)) {
+        setSelectedFile(file);
+      } else {
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.allowedExtensions]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setSelectedFile(file);
+    if (file) {
+      if (validateFileExtension(file)) {
+        setSelectedFile(file);
+      } else {
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }
   };
 
   // ── Status helpers ──────────────────────────────────────────────────────────
@@ -288,6 +322,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setFilenameOverride('');
     setSelectedFile(null);
     setUploadFilenameOverride('');
+    setUploadError(null);
     setMagnetUrl('');
     setTorrentFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -426,6 +461,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
+                  accept={config.allowedExtensions.length > 0 ? config.allowedExtensions.join(',') : undefined}
                   onChange={handleFileChange}
                 />
                 {selectedFile ? (
@@ -447,6 +483,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   </>
                 )}
               </div>
+
+              {uploadError && (
+                <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{uploadError}</p>
+              )}
 
               <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
 
@@ -602,7 +642,11 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 <p className="text-xs text-th-text-dim ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
               )}
               {currentJob.message && (
-                <p className="text-sm text-th-text-sub ml-8 mt-1 break-all">{currentJob.message}</p>
+                currentJob.status === 'error' ? (
+                  <p className="text-sm text-red-600 ml-8 mt-1 break-all bg-red-500/10 border border-red-500/20 rounded px-3 py-2">{currentJob.message}</p>
+                ) : (
+                  <p className="text-sm text-th-text-sub ml-8 mt-1 break-all">{currentJob.message}</p>
+                )
               )}
               {currentJob.filename && (
                 <p className="text-sm text-th-text-sub ml-8 break-all">

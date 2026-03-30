@@ -1033,6 +1033,23 @@ export function buildApp() {
     }
   });
 
+  // ── Multer / general error handler ────────────────────────────────────────
+  app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof multer.MulterError) {
+      const messages: Record<string, string> = {
+        LIMIT_FILE_SIZE: 'File is too large',
+        LIMIT_UNEXPECTED_FILE: 'Unexpected file field',
+      };
+      res.status(400).json({ error: messages[err.code] || err.message });
+      return;
+    }
+    if (err) {
+      res.status(500).json({ error: err.message || 'Internal server error' });
+      return;
+    }
+    next();
+  });
+
   // ── Static files (production only) ─────────────────────────────────────────
   const STATIC_DIR = process.env.STATIC_DIR || '';
   if (STATIC_DIR && existsSync(STATIC_DIR)) {
