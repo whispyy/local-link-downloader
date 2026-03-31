@@ -1,5 +1,6 @@
 import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import ErrorBoundary from './ErrorBoundary.tsx';
 import App from './App.tsx';
 import QueuePage from './QueuePage.tsx';
 import BrowsePage from './BrowsePage.tsx';
@@ -98,6 +99,8 @@ function Root() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Root />
+    <ErrorBoundary>
+      <Root />
+    </ErrorBoundary>
   </StrictMode>
 );
