@@ -14,7 +14,7 @@ import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
-import { writeFile, appendFile, unlink, readdir, stat, statfs } from 'fs/promises';
+import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -1030,6 +1030,77 @@ export function buildApp() {
       res.json({ ok: true });
     } catch {
       res.status(500).json({ error: 'Failed to delete file' });
+    }
+  });
+
+  // ── POST /api/browse/:folderKey/:filename/move ─────────────────────────────
+  app.post('/api/browse/:folderKey/:filename/move', authMiddleware, async (req, res) => {
+    const { folderKey, filename } = req.params;
+    const { targetFolder } = req.body;
+    if (!targetFolder || typeof targetFolder !== 'string') {
+      res.status(400).json({ error: 'Missing targetFolder in body' });
+      return;
+    }
+    if (targetFolder === folderKey) {
+      res.status(400).json({ error: 'Target folder is the same as source' });
+      return;
+    }
+
+    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid source folder key: ${folderKey}` });
+      return;
+    }
+    if (!folderMapping.has(targetFolder)) {
+      res.status(400).json({ error: `Invalid target folder key: ${targetFolder}` });
+      return;
+    }
+
+    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const srcFolder = folderMapping.get(folderKey)!;
+    const dstFolder = folderMapping.get(targetFolder)!;
+    const srcPath = path.join(srcFolder, filename);
+    const dstPath = path.join(dstFolder, filename);
+
+    // Path traversal checks
+    if (!path.resolve(srcPath).startsWith(path.resolve(srcFolder) + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+    if (!path.resolve(dstPath).startsWith(path.resolve(dstFolder) + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+
+    if (!existsSync(srcPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+    if (existsSync(dstPath)) {
+      res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+      return;
+    }
+
+    try {
+      // rename works across same filesystem; fall back to copy+delete for cross-device
+      try {
+        await rename(srcPath, dstPath);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+          await copyFile(srcPath, dstPath);
+          await unlink(srcPath);
+        } else {
+          throw err;
+        }
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      log('ERROR', 'Move file failed', { folderKey, targetFolder, filename, error: String(err) });
+      res.status(500).json({ error: 'Failed to move file' });
     }
   });
 

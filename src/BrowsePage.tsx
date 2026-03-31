@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, HardDrive } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, HardDrive, ArrowRightLeft } from 'lucide-react';
 import { formatBytes, getMediaType } from './utils';
 import SettingsMenu from './SettingsMenu';
 
@@ -47,6 +47,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [textLoading, setTextLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<string | null>(null); // filename being moved
+  const [moving, setMoving] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${token}` };
 
@@ -157,6 +159,33 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setError('Failed to delete file');
     } finally {
       setDeleting(false);
+    }
+  }, [folderKey, token, selectedFile, fetchFiles]);
+
+  const handleMove = useCallback(async (filename: string, targetFolder: string) => {
+    setMoving(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/move`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetFolder }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Move failed' }));
+        setError(data.error || 'Move failed');
+        return;
+      }
+      if (selectedFile === filename) {
+        setSelectedFile(null);
+        setTextContent(null);
+      }
+      setMoveTarget(null);
+      fetchFiles();
+    } catch {
+      setError('Failed to move file');
+    } finally {
+      setMoving(false);
     }
   }, [folderKey, token, selectedFile, fetchFiles]);
 
@@ -329,6 +358,27 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                 Cancel
                               </button>
                             </>
+                          ) : moveTarget === file.name ? (
+                            <>
+                              <select
+                                autoFocus
+                                defaultValue=""
+                                onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }}
+                                disabled={moving}
+                                className="px-2 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none"
+                              >
+                                <option value="" disabled>Move to…</option>
+                                {folders.filter(f => f !== folderKey).map(f => (
+                                  <option key={f} value={f}>{f}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => setMoveTarget(null)}
+                                className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                              >
+                                Cancel
+                              </button>
+                            </>
                           ) : (
                             <>
                               <a
@@ -339,8 +389,17 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               >
                                 <Download className="w-4 h-4" />
                               </a>
+                              {folders.length > 1 && (
+                                <button
+                                  onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }}
+                                  className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition"
+                                  title="Move to another folder"
+                                >
+                                  <ArrowRightLeft className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
-                                onClick={() => setConfirmDelete(file.name)}
+                                onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }}
                                 className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
                                 title="Delete"
                               >

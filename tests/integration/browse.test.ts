@@ -1,6 +1,7 @@
 /**
  * Integration tests — GET /api/browse/:folderKey and GET /api/browse/:folderKey/:filename
  *                      DELETE /api/browse/:folderKey/:filename
+ *                      POST /api/browse/:folderKey/:filename/move
  *
  * Scenarios:
  *   B1  List files in a folder
@@ -19,10 +20,19 @@
  *   B14 Delete with path traversal blocked
  *   B15 Delete requires auth when APP_PASSWORD is set
  *   B16 Delete a file with special characters in name
+ *   B17 Move a file to another folder
+ *   B18 Move returns 400 for missing targetFolder
+ *   B19 Move returns 400 for same source and target folder
+ *   B20 Move returns 400 for invalid source folder key
+ *   B21 Move returns 400 for invalid target folder key
+ *   B22 Move returns 404 for non-existent file
+ *   B23 Move returns 409 when file already exists in target
+ *   B24 Move blocks path traversal
+ *   B25 Move requires auth when APP_PASSWORD is set
  */
 
 import request from 'supertest';
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { buildApp } from '../../server/app';
@@ -266,6 +276,164 @@ describe('DELETE /api/browse/:folderKey/:filename', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(existsSync(path.join(tmpDir, 'café.txt'))).toBe(false);
+  });
+});
+
+describe('POST /api/browse/:folderKey/:filename/move', () => {
+  let srcDir: string;
+  let dstDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    srcDir = mkdtempSync(path.join(tmpdir(), 'wd-test-move-src-'));
+    dstDir = mkdtempSync(path.join(tmpdir(), 'wd-test-move-dst-'));
+
+    writeFileSync(path.join(srcDir, 'moveme.txt'), 'move-content');
+    writeFileSync(path.join(srcDir, 'stay.txt'), 'stay-content');
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `source:${srcDir};target:${dstDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(srcDir, { recursive: true, force: true });
+    rmSync(dstDir, { recursive: true, force: true });
+  });
+
+  it('B17 — moves a file to another folder', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/moveme.txt/move')
+      .send({ targetFolder: 'target' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+
+    // File removed from source
+    expect(existsSync(path.join(srcDir, 'moveme.txt'))).toBe(false);
+    // File present in target with same content
+    expect(existsSync(path.join(dstDir, 'moveme.txt'))).toBe(true);
+    expect(readFileSync(path.join(dstDir, 'moveme.txt'), 'utf-8')).toBe('move-content');
+
+    // Other files untouched
+    expect(existsSync(path.join(srcDir, 'stay.txt'))).toBe(true);
+
+    // Source listing no longer contains the moved file
+    const list = await request(app).get('/api/browse/source');
+    const names = list.body.files.map((f: { name: string }) => f.name);
+    expect(names).not.toContain('moveme.txt');
+    expect(names).toContain('stay.txt');
+
+    // Target listing contains the moved file
+    const dstList = await request(app).get('/api/browse/target');
+    const dstNames = dstList.body.files.map((f: { name: string }) => f.name);
+    expect(dstNames).toContain('moveme.txt');
+  });
+
+  it('B18 — returns 400 for missing targetFolder', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/moveme.txt/move')
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/targetFolder/i);
+  });
+
+  it('B19 — returns 400 when source and target are the same', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/moveme.txt/move')
+      .send({ targetFolder: 'source' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/same/i);
+  });
+
+  it('B20 — returns 400 for invalid source folder key', async () => {
+    const res = await request(app)
+      .post('/api/browse/nonexistent/moveme.txt/move')
+      .send({ targetFolder: 'target' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid.*folder/i);
+  });
+
+  it('B21 — returns 400 for invalid target folder key', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/moveme.txt/move')
+      .send({ targetFolder: 'nonexistent' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid.*folder/i);
+  });
+
+  it('B22 — returns 404 for non-existent file', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/nope.txt/move')
+      .send({ targetFolder: 'target' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('B23 — returns 409 when file already exists in target', async () => {
+    writeFileSync(path.join(dstDir, 'moveme.txt'), 'already-here');
+
+    const res = await request(app)
+      .post('/api/browse/source/moveme.txt/move')
+      .send({ targetFolder: 'target' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+
+    // Source file untouched
+    expect(existsSync(path.join(srcDir, 'moveme.txt'))).toBe(true);
+    // Target file untouched
+    expect(readFileSync(path.join(dstDir, 'moveme.txt'), 'utf-8')).toBe('already-here');
+  });
+
+  it('B24 — blocks path traversal in filename', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/..%2F..%2Fetc%2Fpasswd/move')
+      .send({ targetFolder: 'target' });
+
+    expect([400, 404]).toContain(res.status);
+  });
+});
+
+describe('POST /api/browse — move auth required', () => {
+  let srcDir: string;
+  let dstDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    srcDir = mkdtempSync(path.join(tmpdir(), 'wd-test-move-auth-src-'));
+    dstDir = mkdtempSync(path.join(tmpdir(), 'wd-test-move-auth-dst-'));
+    writeFileSync(path.join(srcDir, 'secret.txt'), 'classified');
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `source:${srcDir};target:${dstDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(srcDir, { recursive: true, force: true });
+    rmSync(dstDir, { recursive: true, force: true });
+  });
+
+  it('B25 — move requires auth', async () => {
+    const res = await request(app)
+      .post('/api/browse/source/secret.txt/move')
+      .send({ targetFolder: 'target' });
+
+    expect(res.status).toBe(401);
+    // File should not have been moved
+    expect(existsSync(path.join(srcDir, 'secret.txt'))).toBe(true);
   });
 });
 
