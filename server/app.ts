@@ -18,7 +18,7 @@ import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile 
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
-import { notifyDiscord } from './notifier';
+import { notifyDiscord, notifyDiscordError } from './notifier';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,7 @@ function makeLogger() {
     const metaStr = meta ? ' ' + JSON.stringify(meta) : '';
     const line = `[${timestamp}] [${level}] ${message}${metaStr}\n`;
     process.stdout.write(line);
+    if (level === 'ERROR') notifyDiscordError(message, meta);
     appendFile(LOG_FILE, line).catch(() => {});
   };
 }
@@ -231,6 +232,17 @@ export function buildApp() {
   // ── Middleware ──────────────────────────────────────────────────────────────
   app.use(cors());
   app.use(express.json());
+
+  // Catch malformed URL-encoded params (e.g. %c0) sent by bots/scanners.
+  // Express's router throws URIError before route handlers run, so we need
+  // a top-level error handler to prevent unhandled crashes.
+  app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof URIError) {
+      res.status(400).json({ error: 'Malformed URL encoding' });
+      return;
+    }
+    next(err);
+  });
 
   // Track all /api requests for the usage page
   app.use('/api', usage.middleware);

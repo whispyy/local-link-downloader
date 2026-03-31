@@ -7,10 +7,13 @@
  *   N3  Download → sends "Download started" notification
  *   N4  Download completion → sends "Download completed" notification (real network)
  *   N5  Notification payload has correct shape (POST, JSON, content field)
+ *   N6  No DISCORD_ERROR_WEBHOOK_URL set → errors do not trigger error webhook
+ *   N7  Server error sends notification to error webhook
+ *   N8  Error webhook payload includes meta as JSON code block
  */
 
 import request from 'supertest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, chmodSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { buildApp } from '../../server/app';
@@ -208,6 +211,105 @@ describe('Discord notifications', () => {
       const body = JSON.parse(call.init.body as string);
       expect(typeof body.content).toBe('string');
       expect(body.content.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('Discord error notifications', () => {
+  const ERROR_WEBHOOK = 'https://discord.com/api/webhooks/errors/fake-token';
+
+  // ── N6 — No error webhook URL ────────────────────────────────────────────
+
+  describe('when DISCORD_ERROR_WEBHOOK_URL is not set', () => {
+    let app: ReturnType<typeof buildApp>;
+    let tmpDir: string;
+
+    beforeAll(() => {
+      tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-nerr-'));
+      writeFileSync(path.join(tmpDir, 'a.txt'), 'data');
+      // Make folder unreadable to trigger browse listing error
+      chmodSync(tmpDir, 0o000);
+
+      setEnv({
+        APP_PASSWORD: undefined,
+        DOWNLOAD_FOLDERS: `broken:${tmpDir}`,
+        DISCORD_ERROR_WEBHOOK_URL: undefined,
+      });
+      app = buildApp();
+    });
+
+    afterAll(() => {
+      chmodSync(tmpDir, 0o755);
+      resetEnv();
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('N6 — server error does not trigger any error webhook fetch', async () => {
+      fetchCalls = [];
+
+      await request(app).get('/api/browse/broken');
+      await new Promise((r) => setTimeout(r, 100));
+
+      // No calls to any discord webhook
+      const errorCalls = fetchCalls.filter((c) => c.url.includes('errors'));
+      expect(errorCalls).toHaveLength(0);
+    });
+  });
+
+  // ── N7–N8 — With error webhook URL ───────────────────────────────────────
+
+  describe('when DISCORD_ERROR_WEBHOOK_URL is set', () => {
+    let app: ReturnType<typeof buildApp>;
+    let tmpDir: string;
+
+    beforeAll(() => {
+      tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-werr-'));
+      writeFileSync(path.join(tmpDir, 'a.txt'), 'data');
+      chmodSync(tmpDir, 0o000);
+
+      setEnv({
+        APP_PASSWORD: undefined,
+        DOWNLOAD_FOLDERS: `broken:${tmpDir}`,
+        DISCORD_ERROR_WEBHOOK_URL: ERROR_WEBHOOK,
+      });
+      app = buildApp();
+    });
+
+    afterAll(() => {
+      chmodSync(tmpDir, 0o755);
+      resetEnv();
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('N7 — server error sends notification to error webhook', async () => {
+      fetchCalls = [];
+
+      const res = await request(app).get('/api/browse/broken');
+      expect(res.status).toBe(500);
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      const errorCalls = fetchCalls.filter((c) => c.url === ERROR_WEBHOOK);
+      expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+
+      const body = JSON.parse(errorCalls[0].init.body as string);
+      expect(body.content).toMatch(/error/i);
+      expect(body.content).toContain('Browse listing failed');
+    });
+
+    it('N8 — error webhook payload includes meta as JSON code block', async () => {
+      fetchCalls = [];
+
+      await request(app).get('/api/browse/broken');
+      await new Promise((r) => setTimeout(r, 100));
+
+      const errorCalls = fetchCalls.filter((c) => c.url === ERROR_WEBHOOK);
+      const body = JSON.parse(errorCalls[0].init.body as string);
+
+      // Meta should be formatted as a JSON code block
+      expect(body.content).toContain('```json');
+      expect(body.content).toContain('"folderKey"');
+      expect(body.content).toContain('broken');
     });
   });
 });
