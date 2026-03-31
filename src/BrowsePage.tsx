@@ -223,7 +223,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
               <select
                 value={folderKey}
                 onChange={(e) => handleFolderChange(e.target.value)}
-                className="px-4 py-2 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text text-sm"
+                className="min-w-[8rem] max-w-[16rem] px-4 py-2 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text text-sm"
+                style={{ width: `${Math.max(...folders.map(f => f.length), 4) + 4}ch` }}
               >
                 {folders.map(f => (
                   <option key={f} value={f}>{f}</option>

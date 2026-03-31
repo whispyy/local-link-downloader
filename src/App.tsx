@@ -435,7 +435,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 disabled={isSubmitting || !url || !folderKey}
                 className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
-                {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : <><Download className="w-4 h-4" />Download File</>}
+                {isSubmitting ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Submitting...</span> : <span className="inline-flex items-center gap-2"><Download className="w-4 h-4" />Download File</span>}
               </button>
             </form>
           )}
@@ -511,7 +511,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 disabled={isSubmitting || !selectedFile || !folderKey}
                 className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
-                {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4" />Upload File</>}
+                {isSubmitting ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Uploading...</span> : <span className="inline-flex items-center gap-2"><Upload className="w-4 h-4" />Upload File</span>}
               </button>
             </form>
           )}
@@ -594,8 +594,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
               >
                 {isSubmitting
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />Starting...</>
-                  : <><Magnet className="w-4 h-4" />Start Torrent</>}
+                  ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Starting...</span>
+                  : <span className="inline-flex items-center gap-2"><Magnet className="w-4 h-4" />Start Torrent</span>}
               </button>
             </form>
           )}
