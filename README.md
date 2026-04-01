@@ -1,5 +1,7 @@
 # Link Downloader
 
+[![Docker Image](https://img.shields.io/badge/ghcr.io-latest-blue?logo=docker)](https://github.com/whispyy/local-link-downloader/pkgs/container/local-link-downloader)
+
 A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents — all saved to folders on your machine.
 
 - **Frontend** — React + Vite + Tailwind CSS

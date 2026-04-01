@@ -330,7 +330,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   return (
                     <tr
                       key={file.name}
-                      className={`hover:bg-th-bg-alt transition ${type ? 'cursor-pointer' : ''} ${selectedFile === file.name ? 'bg-th-bg-muted' : ''}`}
+                      className={`hover:bg-th-bg-alt transition ${type ? 'cursor-pointer' : ''} ${selectedFile === file.name ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
                       onClick={() => { if (type) handleSelectFile(file.name); }}
                     >
                       <td className="px-4 py-3 max-w-0 min-w-[150px]">
@@ -360,12 +360,17 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               </button>
                             </>
                           ) : moveTarget === file.name ? (
+                            moving ? (
+                              <span className="flex items-center gap-1.5 px-2 py-1 text-xs text-th-text-dim">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                Moving…
+                              </span>
+                            ) : (
                             <>
                               <select
                                 autoFocus
                                 defaultValue=""
                                 onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }}
-                                disabled={moving}
                                 className="px-2 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none"
                               >
                                 <option value="" disabled>Move to…</option>
@@ -380,6 +385,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                 Cancel
                               </button>
                             </>
+                            )
                           ) : (
                             <>
                               <a
