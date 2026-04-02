@@ -13,7 +13,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { createWriteStream, existsSync, mkdirSync } from 'fs';
+import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
@@ -1089,21 +1089,31 @@ export function buildApp() {
       res.status(409).json({ error: 'A file with that name already exists in the target folder' });
       return;
     }
-
     try {
-      // rename works across same filesystem; fall back to copy+delete for cross-device
+      // rename works across same filesystem; fall back to copy+delete for cross-device.
+      // COPYFILE_EXCL makes the copy atomic with respect to the existence check —
+      // no TOCTOU window between existsSync and the write.
       try {
         await rename(srcPath, dstPath);
       } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-          await copyFile(srcPath, dstPath);
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'EEXIST') {
+          res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+          return;
+        }
+        if (code === 'EXDEV') {
+          await copyFile(srcPath, dstPath, fsConstants.COPYFILE_EXCL);
           await unlink(srcPath);
         } else {
           throw err;
         }
       }
       res.json({ ok: true });
-    } catch (err) {
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+        return;
+      }
       log('ERROR', 'Move file failed', { folderKey, targetFolder, filename, error: String(err) });
       res.status(500).json({ error: 'Failed to move file' });
     }
