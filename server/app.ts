@@ -13,7 +13,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { createReadStream, existsSync, mkdirSync, statSync } from 'fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, startCacheCleanup } from './transcode';
@@ -165,31 +165,41 @@ async function downloadFile(
     const total = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined;
 
     if (response.body) {
-      const chunks: Buffer[] = [];
+      const fileStream = createWriteStream(destPath);
       let downloaded = 0;
       let lastReported = 0;
       const THROTTLE_BYTES = 512 * 1024;
       const reader = response.body.getReader();
-      while (true) {
-        if (signal.aborted) {
-          await reader.cancel();
-          return { success: false, cancelled: true };
+      try {
+        while (true) {
+          if (signal.aborted) {
+            await reader.cancel();
+            fileStream.destroy();
+            return { success: false, cancelled: true };
+          }
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = Buffer.from(value);
+          downloaded += chunk.length;
+          const canContinue = fileStream.write(chunk);
+          if (!canContinue) {
+            await new Promise<void>((resolve) => fileStream.once('drain', resolve));
+          }
+          const threshold = total ? Math.max(total * 0.01, THROTTLE_BYTES) : THROTTLE_BYTES;
+          if (downloaded - lastReported >= threshold) {
+            lastReported = downloaded;
+            onProgress?.(downloaded, total);
+          }
         }
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = Buffer.from(value);
-        chunks.push(chunk);
-        downloaded += chunk.length;
-        const threshold = total ? Math.max(total * 0.01, THROTTLE_BYTES) : THROTTLE_BYTES;
-        if (downloaded - lastReported >= threshold) {
-          lastReported = downloaded;
-          onProgress?.(downloaded, total);
-        }
+        onProgress?.(downloaded, total);
+        await new Promise<void>((resolve, reject) =>
+          fileStream.end((err: Error | null | undefined) => (err ? reject(err) : resolve())),
+        );
+        return { success: true, totalBytes: downloaded };
+      } catch (err) {
+        fileStream.destroy();
+        throw err;
       }
-      onProgress?.(downloaded, total);
-      const data = Buffer.concat(chunks);
-      await writeFile(destPath, data);
-      return { success: true, totalBytes: downloaded };
     } else {
       const arrayBuffer = await response.arrayBuffer();
       const data = Buffer.from(arrayBuffer);
