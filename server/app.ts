@@ -243,17 +243,6 @@ export function buildApp() {
   app.use(cors());
   app.use(express.json());
 
-  // Catch malformed URL-encoded params (e.g. %c0) sent by bots/scanners.
-  // Express's router throws URIError before route handlers run, so we need
-  // a top-level error handler to prevent unhandled crashes.
-  app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (err instanceof URIError) {
-      res.status(400).json({ error: 'Malformed URL encoding' });
-      return;
-    }
-    next(err);
-  });
-
   // Track all /api requests for the usage page
   app.use('/api', usage.middleware);
 
@@ -1126,8 +1115,14 @@ export function buildApp() {
     }
   });
 
-  // ── Multer / general error handler ────────────────────────────────────────
+  // ── Multer / URI / general error handler ─────────────────────────────────
+  // Placed after all routes so Express routes errors here correctly.
+  // Catches URIError (malformed %xx from bots/scanners), MulterError, and fallbacks.
   app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof URIError) {
+      res.status(400).json({ error: 'Malformed URL encoding' });
+      return;
+    }
     if (err instanceof multer.MulterError) {
       const messages: Record<string, string> = {
         LIMIT_FILE_SIZE: 'File is too large',
