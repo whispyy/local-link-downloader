@@ -215,5 +215,11 @@ export async function handleStreamRequest(
   // Wait for transcoding to finish
   await entry.promise;
 
+  // Re-check: a concurrent failure may have deleted the cache entry and unlinked
+  // tmpPath between when this caller retrieved the entry and now.
+  if (!cache.has(cacheKey)) {
+    throw new Error('Transcode failed (entry evicted during concurrent request)');
+  }
+
   serveFileWithRanges(entry.tmpPath, req, res);
 }
