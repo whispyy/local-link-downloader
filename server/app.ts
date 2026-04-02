@@ -137,8 +137,23 @@ export function sanitizeFilename(filename: string): string {
 
 export function isInternalIP(hostname: string): boolean {
   if (hostname === 'localhost') return true;
+
+  // Strip brackets from IPv6 literals (e.g. [::1] → ::1)
+  const bare = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+
+  // IPv6 loopback
+  if (bare === '::1') return true;
+  // IPv6 link-local fe80::/10
+  if (/^fe[89ab][0-9a-f]:/i.test(bare)) return true;
+  // IPv6 unique-local fc00::/7  (fc:: and fd::)
+  if (/^f[cd][0-9a-f]{2}:/i.test(bare)) return true;
+  // IPv4-mapped IPv6 ::ffff:a.b.c.d or ::ffff:0xAB...
+  if (/^::ffff:/i.test(bare)) return true;
+
   const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-  const match = hostname.match(ipv4Regex);
+  const match = bare.match(ipv4Regex);
   if (!match) return false;
   const parts = match.slice(1, 5).map(Number);
   if (parts[0] === 10) return true;
