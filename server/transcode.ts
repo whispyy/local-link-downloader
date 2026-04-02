@@ -144,9 +144,14 @@ export function startCacheCleanup(log: LogFn) {
 
 // ─── Serve with Range support ────────────────────────────────────────────────
 
-function serveFileWithRanges(filePath: string, req: express.Request, res: express.Response) {
+export function serveFileWithRanges(
+  filePath: string,
+  req: express.Request,
+  res: express.Response,
+  contentType = 'video/mp4',
+) {
   const fileStat = statSync(filePath);
-  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Type', contentType);
   res.setHeader('Content-Disposition', 'inline');
   res.setHeader('Accept-Ranges', 'bytes');
 

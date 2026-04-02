@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList, HardDrive } from 'lucide-react';
-import { formatBytes } from './utils';
-import SettingsMenu from './SettingsMenu';
-import { sendJobNotification } from './notifications';
+import { useAuthHeaders } from './useAuthHeaders';
+import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList } from 'lucide-react';
+import { formatBytes, formatDate } from './utils';
+import NavBar from './NavBar';
+import { isTerminalTransition, sendJobNotification } from './notifications';
 
 const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
 
@@ -63,9 +64,6 @@ function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString();
-}
 
 
 function SizeCell({ job }: { job: QueueJob }) {
@@ -111,7 +109,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
     });
   }, []);
 
-  const authHeaders = { Authorization: `Bearer ${token}` };
+  const authHeaders = useAuthHeaders(token);
 
   const handleStop = useCallback(async (jobId: string) => {
     setStoppingIds((prev) => new Set(prev).add(jobId));
@@ -155,10 +153,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
       if (prevMap.size > 0) {
         for (const job of data) {
           const prev = prevMap.get(job.id);
-          if (
-            (job.status === 'done' || job.status === 'error') &&
-            prev !== undefined && prev !== 'done' && prev !== 'error' && prev !== 'cancelled'
-          ) {
+          if (isTerminalTransition(prev, job.status)) {
             sendJobNotification(job.filename, job.status, job.message);
           }
         }
@@ -196,20 +191,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
-      {/* Sticky nav bar */}
-      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
-        <div className="max-w-5xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
-          <div className="flex items-center gap-3">
-            <nav className="flex items-center gap-1 text-sm">
-              <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
-              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
-              <a href="#/queue" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Queue</a>
-            </nav>
-            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
-          </div>
-        </div>
-      </header>
+      <NavBar currentPage="queue" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
       <div className="p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">

@@ -13,10 +13,10 @@ import cors from 'cors';
 import multer from 'multer';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
 import path from 'path';
-import { handleStreamRequest, startCacheCleanup } from './transcode';
+import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError } from './notifier';
 
@@ -135,6 +135,22 @@ export function sanitizeFilename(filename: string): string {
     .substring(0, 255);
 }
 
+/** Returns an error message string if the filename fails the allowlist, or null if it passes. */
+export function validateExtension(filename: string, allowedExtensions: string[]): string | null {
+  if (allowedExtensions.length === 0) return null;
+  const dotIdx = filename.lastIndexOf('.');
+  if (dotIdx === -1) return 'File has no extension. An extension is required.';
+  const fileExt = filename.substring(dotIdx).toLowerCase();
+  if (!allowedExtensions.includes(fileExt)) {
+    return `File extension ${fileExt} is not allowed. Allowed: ${allowedExtensions.join(', ')}`;
+  }
+  return null;
+}
+
+export function isUnsafeFilename(filename: string): boolean {
+  return !filename || filename.includes('..') || filename.includes('/') || filename.includes('\\');
+}
+
 export function isInternalIP(hostname: string): boolean {
   if (hostname === 'localhost') return true;
 
@@ -232,6 +248,12 @@ async function downloadFile(
   }
 }
 
+const JOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+function scheduleJobExpiry(jobs: Map<string, DownloadJob>, jobId: string): void {
+  setTimeout(() => { jobs.delete(jobId); }, JOB_TTL_MS).unref();
+}
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 /**
@@ -249,6 +271,9 @@ export function buildApp() {
   // Per-instance state (isolated between test suites)
   const jobs = new Map<string, DownloadJob>();
   const sessions = new Map<string, number>();
+
+  // Parse once at startup — DOWNLOAD_FOLDERS is static for the lifetime of the process
+  const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
 
   // Resolve log path from env at buildApp() call time so tests can override LOG_DIR
   const log = makeLogger();
@@ -309,9 +334,7 @@ export function buildApp() {
 
   // ── GET /api/config ─────────────────────────────────────────────────────────
   app.get('/api/config', authMiddleware, async (_req, res) => {
-    const downloadFoldersEnv = process.env.DOWNLOAD_FOLDERS || '';
     const allowedExtensionsEnv = process.env.ALLOWED_EXTENSIONS || '';
-    const folderMapping = parseFolderMapping(downloadFoldersEnv);
     const folders = Array.from(folderMapping.keys());
     const allowedExtensions = allowedExtensionsEnv
       .split(',')
@@ -383,7 +406,7 @@ export function buildApp() {
       return;
     }
 
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
@@ -406,19 +429,10 @@ export function buildApp() {
       .map((ext) => ext.trim().toLowerCase())
       .filter((ext) => ext.length > 0);
 
-    if (allowedExtensions.length > 0) {
-      const dotIdx = filename.lastIndexOf('.');
-      if (dotIdx === -1) {
-        res.status(400).json({ error: 'File has no extension. An extension is required.' });
-        return;
-      }
-      const fileExt = filename.substring(dotIdx).toLowerCase();
-      if (!allowedExtensions.includes(fileExt)) {
-        res.status(400).json({
-          error: `File extension ${fileExt} is not allowed. Allowed: ${allowedExtensions.join(', ')}`,
-        });
-        return;
-      }
+    const extError = validateExtension(filename, allowedExtensions);
+    if (extError) {
+      res.status(400).json({ error: extError });
+      return;
     }
 
     const fullPath = path.join(destinationFolder, filename);
@@ -492,7 +506,7 @@ export function buildApp() {
       }
 
       // .unref() prevents this timer from keeping the Node process alive in tests
-      setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+      scheduleJobExpiry(jobs, jobId);
     });
 
     res.json({ id: jobId, status: 'queued' });
@@ -533,7 +547,7 @@ export function buildApp() {
       return;
     }
 
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
@@ -548,19 +562,10 @@ export function buildApp() {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
 
-    if (allowedExtensions.length > 0) {
-      const dotIdx = filename.lastIndexOf('.');
-      if (dotIdx === -1) {
-        res.status(400).json({ error: 'File has no extension. An extension is required.' });
-        return;
-      }
-      const fileExt = filename.substring(dotIdx).toLowerCase();
-      if (!allowedExtensions.includes(fileExt)) {
-        res.status(400).json({
-          error: `File extension ${fileExt} is not allowed. Allowed: ${allowedExtensions.join(', ')}`,
-        });
-        return;
-      }
+    const extError = validateExtension(filename, allowedExtensions);
+    if (extError) {
+      res.status(400).json({ error: extError });
+      return;
     }
 
     const fullPath = path.join(destinationFolder, filename);
@@ -601,7 +606,7 @@ export function buildApp() {
     jobs.set(jobId, job);
     log('INFO', 'File uploaded', { jobId, filename, folderKey, fullPath });
     notifyDiscord(`✅ Upload completed: **${filename}** → \`${folderKey}\``);
-    setTimeout(() => jobs.delete(jobId), 24 * 60 * 60 * 1000).unref();
+    scheduleJobExpiry(jobs, jobId);
 
     res.json({
       id: jobId,
@@ -630,7 +635,7 @@ export function buildApp() {
       return;
     }
 
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
@@ -665,7 +670,7 @@ export function buildApp() {
       const j = jobs.get(jobId);
       if (!j || j.status === 'cancelled') {
         // Job was cancelled before we got here — just ensure cleanup timer is set
-        if (j) setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+        if (j) scheduleJobExpiry(jobs, jobId);
         return;
       }
       j.status = 'downloading';
@@ -721,7 +726,7 @@ export function buildApp() {
         log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
         notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\``);
         torrent.destroy();
-        setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+        scheduleJobExpiry(jobs, jobId);
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -735,7 +740,7 @@ export function buildApp() {
         jj.updatedAt = new Date().toISOString();
         log('ERROR', 'Torrent error', { jobId, error: jj.message });
         notifyDiscord(`❌ Torrent failed: **${jj.filename || 'unknown'}** → \`${folderKey}\``);
-        setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+        scheduleJobExpiry(jobs, jobId);
       });
     });
 
@@ -785,7 +790,7 @@ export function buildApp() {
     if (job.type === 'torrent' && job.torrentRef) {
       job.torrentRef.destroy();
       job.torrentRef = undefined;
-      setTimeout(() => { jobs.delete(jobId); }, 24 * 60 * 60 * 1000).unref();
+      scheduleJobExpiry(jobs, jobId);
     }
     log('INFO', 'Job cancelled', { jobId });
     res.json({ id: jobId, status: 'cancelled' });
@@ -875,7 +880,7 @@ export function buildApp() {
   // ── GET /api/browse/:folderKey ────────────────────────────────────────────
   app.get('/api/browse/:folderKey', authMiddleware, async (req, res) => {
     const { folderKey } = req.params;
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
@@ -931,14 +936,14 @@ export function buildApp() {
     }
 
     const { folderKey, filename } = req.params;
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
     }
 
     const folderPath = folderMapping.get(folderKey)!;
-    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    if (isUnsafeFilename(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
@@ -967,14 +972,14 @@ export function buildApp() {
   // ── GET /api/browse/:folderKey/:filename ──────────────────────────────────
   app.get('/api/browse/:folderKey/:filename', authMiddlewareWithQuery, (req, res) => {
     const { folderKey, filename } = req.params;
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
     }
 
     const folderPath = folderMapping.get(folderKey)!;
-    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    if (isUnsafeFilename(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
@@ -992,50 +997,22 @@ export function buildApp() {
       return;
     }
 
-    const fileStat = statSync(fullPath);
     const ext = path.extname(filename).toLowerCase();
     const contentType = MIME_MAP[ext] || 'application/octet-stream';
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', 'inline');
-
-    const rangeHeader = req.headers.range;
-    if (rangeHeader) {
-      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-      if (match) {
-        const start = parseInt(match[1], 10);
-        const end = match[2] ? parseInt(match[2], 10) : fileStat.size - 1;
-
-        if (start >= fileStat.size || end >= fileStat.size || start > end) {
-          res.status(416).setHeader('Content-Range', `bytes */${fileStat.size}`).end();
-          return;
-        }
-
-        res.status(206);
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileStat.size}`);
-        res.setHeader('Content-Length', end - start + 1);
-        res.setHeader('Accept-Ranges', 'bytes');
-        createReadStream(fullPath, { start, end }).pipe(res);
-        return;
-      }
-    }
-
-    res.setHeader('Content-Length', fileStat.size);
-    res.setHeader('Accept-Ranges', 'bytes');
-    createReadStream(fullPath).pipe(res);
+    serveFileWithRanges(fullPath, req, res, contentType);
   });
 
   // ── DELETE /api/browse/:folderKey/:filename ───────────────────────────────
   app.delete('/api/browse/:folderKey/:filename', authMiddleware, async (req, res) => {
     const { folderKey, filename } = req.params;
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
       return;
     }
 
     const folderPath = folderMapping.get(folderKey)!;
-    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    if (isUnsafeFilename(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
@@ -1074,7 +1051,7 @@ export function buildApp() {
       return;
     }
 
-    const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
+
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid source folder key: ${folderKey}` });
       return;
@@ -1084,7 +1061,7 @@ export function buildApp() {
       return;
     }
 
-    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    if (isUnsafeFilename(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }
