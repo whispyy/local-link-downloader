@@ -293,9 +293,11 @@ export function buildApp() {
     const { password } = req.body as { password?: string };
     const expected = process.env.APP_PASSWORD!;
     const provided = password ?? '';
+    // Always call timingSafeEqual regardless of length so attackers cannot
+    // binary-search the password length via response timing.
+    const padded = provided.padEnd(expected.length, '\0').substring(0, expected.length);
     const lengthMatch = provided.length === expected.length;
-    const valueMatch =
-      lengthMatch && timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+    const valueMatch = lengthMatch && timingSafeEqual(Buffer.from(padded), Buffer.from(expected));
     if (!valueMatch) {
       res.status(401).json({ error: 'Invalid password' });
       return;
