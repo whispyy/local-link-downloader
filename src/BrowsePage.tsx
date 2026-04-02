@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, HardDrive, ArrowRightLeft } from 'lucide-react';
-import { formatBytes, getMediaType } from './utils';
-import SettingsMenu from './SettingsMenu';
+import { useAuthHeaders } from './useAuthHeaders';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft } from 'lucide-react';
+import { formatBytes, formatDate, getMediaType } from './utils';
+import NavBar from './NavBar';
 
 interface BrowseFile {
   name: string;
@@ -26,9 +27,6 @@ function MediaIcon({ filename }: { filename: string }) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString();
-}
 
 export default function BrowsePage({ token, onUnauthorized, authEnabled }: BrowsePageProps) {
   const [folders, setFolders] = useState<string[]>([]);
@@ -50,7 +48,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [moveTarget, setMoveTarget] = useState<string | null>(null); // filename being moved
   const [moving, setMoving] = useState(false);
 
-  const authHeaders = { Authorization: `Bearer ${token}` };
+  const authHeaders = useAuthHeaders(token);
 
   useEffect(() => {
     fetch('/api/config', { headers: authHeaders })
@@ -193,20 +191,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
-      {/* Sticky nav bar */}
-      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
-        <div className="max-w-5xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
-          <div className="flex items-center gap-3">
-            <nav className="flex items-center gap-1 text-sm">
-              <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
-              <a href="#/browse" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Browse</a>
-              <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
-            </nav>
-            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
-          </div>
-        </div>
-      </header>
+      <NavBar currentPage="browse" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
       <div className="p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">

@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, HardDrive } from 'lucide-react';
-import SettingsMenu from './SettingsMenu';
-import { sendJobNotification } from './notifications';
+import { useAuthHeaders } from './useAuthHeaders';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet } from 'lucide-react';
+import NavBar from './NavBar';
+import { isTerminalTransition, sendJobNotification } from './notifications';
 import { formatBytes } from './utils';
 
 interface Config {
   folders: string[];
   allowedExtensions: string[];
   freeSpace?: Record<string, number>;
+  transcoding?: boolean;
 }
 
 interface DownloadJob {
@@ -59,11 +61,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [configError, setConfigError] = useState<string | null>(null);
   const prevJobStatusRef = useRef<string | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}` };
+  const authHeaders = useAuthHeaders(token);
 
   useEffect(() => {
     fetchConfig();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authHeaders]);
 
   useEffect(() => {
     if (currentJob && currentJob.id !== 'upload' && (currentJob.status === 'queued' || currentJob.status === 'downloading')) {
@@ -96,10 +99,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       const data = await response.json();
 
       const prev = prevJobStatusRef.current;
-      if (
-        (data.status === 'done' || data.status === 'error') &&
-        prev !== null && prev !== 'done' && prev !== 'error' && prev !== 'cancelled'
-      ) {
+      if (isTerminalTransition(prev, data.status)) {
         sendJobNotification(data.filename || 'Unknown file', data.status, data.message);
       }
       prevJobStatusRef.current = data.status;
@@ -331,20 +331,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
-      {/* Sticky nav bar */}
-      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
-        <div className="max-w-5xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
-          <div className="flex items-center gap-3">
-            <nav className="flex items-center gap-1 text-sm">
-              <a href="#" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Download</a>
-              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
-              <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
-            </nav>
-            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
-          </div>
-        </div>
-      </header>
+      <NavBar currentPage="download" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
       <div className="flex items-center justify-center p-3 sm:p-4 min-h-[calc(100vh-3rem)]">
       <div className="w-full max-w-2xl">

@@ -31,6 +31,16 @@ export async function requestPermissionIfNeeded(): Promise<'granted' | 'denied' 
   return result === 'granted' ? 'granted' : 'denied';
 }
 
+export function isTerminalTransition(prev: string | null | undefined, next: string): next is 'done' | 'error' {
+  return (
+    (next === 'done' || next === 'error') &&
+    prev != null &&
+    prev !== 'done' &&
+    prev !== 'error' &&
+    prev !== 'cancelled'
+  );
+}
+
 export function sendJobNotification(
   filename: string,
   status: 'done' | 'error',

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
-import SettingsMenu from './SettingsMenu';
+import { useAuthHeaders } from './useAuthHeaders';
+import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import NavBar from './NavBar';
 
 interface UsageEntry {
   timestamp: string;
@@ -76,7 +77,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
   const [to, setTo] = useState(initRange.to);
   const [pathFilter, setPathFilter] = useState('');
 
-  const authHeaders = { Authorization: `Bearer ${token}` };
+  const authHeaders = useAuthHeaders(token);
 
   const fetchUsage = useCallback(async () => {
     setLoading(true);
@@ -105,21 +106,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
-      {/* Sticky nav bar */}
-      <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
-        <div className="max-w-6xl mx-auto flex items-center justify-between h-12 px-4 sm:px-6">
-          <a href="#" className="text-th-text-dim hover:text-th-text transition" title="File Manager"><HardDrive className="w-5 h-5 sm:hidden" /><span className="hidden sm:inline text-sm font-medium">File Manager</span></a>
-          <div className="flex items-center gap-3">
-            <nav className="flex items-center gap-1 text-sm">
-              <a href="#" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Download</a>
-              <a href="#/browse" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Browse</a>
-              <a href="#/queue" className="px-2 py-1 rounded text-th-text-dim hover:text-th-text transition">Queue</a>
-              <a href="#/usage" className="px-2 py-1 rounded bg-th-bg-muted text-th-text font-medium">Usage</a>
-            </nav>
-            <SettingsMenu authEnabled={authEnabled} onSignOut={onUnauthorized} />
-          </div>
-        </div>
-      </header>
+      <NavBar currentPage="usage" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
       <div className="p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">

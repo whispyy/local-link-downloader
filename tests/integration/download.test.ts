@@ -152,16 +152,10 @@ describe('POST /api/download', () => {
       });
 
     // sanitizeFilename strips ".." and "/" so "../../etc/passwd" becomes "etcpasswd"
-    // (no extension).  The extension check fires before the path-traversal guard,
-    // so the server returns 400 with an extension-related error.
-    // Any 400 is acceptable — the traversal was blocked one way or another.
-    if (res.status === 400) {
-      expect(res.body.error).toMatch(/path traversal|no extension|not allowed/i);
-    } else {
-      // sanitizer fully neutralised it and the sanitized name passed all checks
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('queued');
-    }
+    // (no extension). The extension allowlist then rejects it with 400.
+    // A 200 here would mean the traversal payload was queued — that must never pass.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/path traversal|no extension|not allowed/i);
   });
 
   // ── Happy path ───────────────────────────────────────────────────────────────

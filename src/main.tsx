@@ -26,8 +26,8 @@ function Root() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(SESSION_KEY));
   const [authChecked, setAuthChecked] = useState(false);
 
-  // On mount, verify whether auth is required by calling /api/auth with no body.
-  // If auth is disabled server-side, the server returns a dummy token immediately.
+  // On mount, probe whether auth is required via GET /api/config (no auth headers).
+  // 200 → auth disabled; 401 → auth required. Avoids burning a rate-limit slot.
   useEffect(() => {
     if (token) {
       // We already have a token from this session — trust it until a 401 proves otherwise
@@ -35,16 +35,11 @@ function Root() {
       return;
     }
 
-    // Try a no-password auth to detect if auth is disabled
-    fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: '' }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.token === 'no-auth') {
-          // Auth is disabled — store the dummy token and proceed
+    // Probe auth requirement via GET /api/config (no rate-limit cost).
+    // 200 → auth disabled; 401 → auth required; other/error → show login.
+    fetch('/api/config')
+      .then((res) => {
+        if (res.ok) {
           localStorage.setItem(SESSION_KEY, 'no-auth');
           setToken('no-auth');
         }
