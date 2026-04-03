@@ -11,7 +11,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { randomUUID, timingSafeEqual } from 'crypto';
+import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
@@ -19,6 +19,7 @@ import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError } from './notifier';
+import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,33 +84,7 @@ function makeLogger() {
   };
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-
-export function isAuthEnabled(): boolean {
-  return Boolean(process.env.APP_PASSWORD);
-}
-
-export function createSession(sessions: Map<string, number>): string {
-  const token = randomUUID();
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
-  for (const [t, exp] of sessions) {
-    if (Date.now() > exp) sessions.delete(t);
-  }
-  return token;
-}
-
-export function isValidSession(sessions: Map<string, number>, token: string): boolean {
-  const exp = sessions.get(token);
-  if (!exp) return false;
-  if (Date.now() > exp) {
-    sessions.delete(token);
-    return false;
-  }
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
-  return true;
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -270,7 +245,7 @@ export function buildApp() {
 
   // Per-instance state (isolated between test suites)
   const jobs = new Map<string, DownloadJob>();
-  const sessions = new Map<string, number>();
+
 
   // Parse once at startup — DOWNLOAD_FOLDERS is static for the lifetime of the process
   const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
@@ -291,7 +266,7 @@ export function buildApp() {
     if (!isAuthEnabled()) { next(); return; }
     const authHeader = req.headers['authorization'] || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (!isValidSession(sessions, token)) {
+    if (!isValidSession(token)) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
@@ -316,18 +291,11 @@ export function buildApp() {
       return;
     }
     const { password } = req.body as { password?: string };
-    const expected = process.env.APP_PASSWORD!;
-    const provided = password ?? '';
-    // Always call timingSafeEqual regardless of length so attackers cannot
-    // binary-search the password length via response timing.
-    const padded = provided.padEnd(expected.length, '\0').substring(0, expected.length);
-    const lengthMatch = provided.length === expected.length;
-    const valueMatch = lengthMatch && timingSafeEqual(Buffer.from(padded), Buffer.from(expected));
-    if (!valueMatch) {
+    if (!verifyPassword(password ?? '')) {
       res.status(401).json({ error: 'Invalid password' });
       return;
     }
-    const token = createSession(sessions);
+    const token = createSession();
     log('INFO', 'New session created');
     res.json({ token });
   });
@@ -870,10 +838,10 @@ export function buildApp() {
     // Try Authorization header first
     const authHeader = req.headers['authorization'] || '';
     const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (isValidSession(sessions, headerToken)) { next(); return; }
+    if (isValidSession(headerToken)) { next(); return; }
     // Fall back to query param (for <video>/<audio>/<img> tags)
     const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
-    if (isValidSession(sessions, queryToken)) { next(); return; }
+    if (isValidSession(queryToken)) { next(); return; }
     res.status(401).json({ error: 'Unauthorized' });
   }
 
