@@ -3,7 +3,7 @@
  *
  * Scenarios:
  *   A1  Auth disabled → returns { token: "no-auth" }
- *   A2  Auth enabled, correct password → returns UUID token
+ *   A2  Auth enabled, correct password → returns HMAC-signed token
  *   A3  Auth enabled, wrong password → 401
  *   A4  Auth enabled, missing password field → 401
  *   A5  Rate-limit: 11th attempt within window → 429
@@ -13,8 +13,8 @@ import request from 'supertest';
 import { buildApp } from '../../server/app';
 import { setEnv, resetEnv } from './helpers/env';
 
-// UUID v4 pattern
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// HMAC token pattern: expiryTimestamp.hexSignature (SHA-256 = 64 hex chars)
+const HMAC_TOKEN_RE = /^\d+\.[0-9a-f]{64}$/;
 
 // ─── A1 — Auth disabled ───────────────────────────────────────────────────────
 describe('POST /api/auth — auth disabled', () => {
@@ -53,13 +53,13 @@ describe('POST /api/auth — auth enabled', () => {
     resetEnv();
   });
 
-  it('A2 — correct password returns a UUID token', async () => {
+  it('A2 — correct password returns an HMAC-signed token', async () => {
     const res = await request(app)
       .post('/api/auth')
       .send({ password: CORRECT_PASSWORD });
 
     expect(res.status).toBe(200);
-    expect(res.body.token).toMatch(UUID_RE);
+    expect(res.body.token).toMatch(HMAC_TOKEN_RE);
   });
 
   it('A3 — wrong password returns 401 with "Invalid password"', async () => {
