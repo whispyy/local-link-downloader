@@ -151,12 +151,44 @@ export function resolveSubpath(folderPath: string, subpath: string): { resolved:
   return { resolved: resolvedTarget };
 }
 
+type ResolveFilePathOk = { fullPath: string };
+type ResolveFilePathErr = { error: string; status: number };
+
+/** Validates folderKey + filename + subpath and resolves to a safe absolute path. */
+function resolveFilePath(
+  folderKey: string,
+  filename: string,
+  subpath: string,
+  folderMapping: Map<string, string>,
+): ResolveFilePathOk | ResolveFilePathErr {
+  if (!folderMapping.has(folderKey)) {
+    return { error: `Invalid folder key: ${folderKey}`, status: 400 };
+  }
+  const folderPath = folderMapping.get(folderKey)!;
+  if (isUnsafeFilename(filename)) {
+    return { error: 'Invalid filename', status: 400 };
+  }
+  const subpathError = validateSubpath(subpath);
+  if (subpathError) {
+    return { error: subpathError, status: 400 };
+  }
+  const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
+  if (resolveError) {
+    return { error: resolveError, status: 400 };
+  }
+  const fullPath = path.join(targetDir, filename);
+  if (!path.resolve(fullPath).startsWith(path.resolve(folderPath) + path.sep)) {
+    return { error: 'Path traversal detected', status: 400 };
+  }
+  return { fullPath };
+}
+
 /** Sanitizes a folder name for mkdir. Returns null if invalid. */
 export function sanitizeFolderName(name: string): string | null {
   if (!name || name.length > 100) return null;
   if (name.startsWith('.')) return null;
   if (name.includes('..') || name.includes('/') || name.includes('\\')) return null;
-  if (!/^[a-zA-Z0-9 _.\-]+$/.test(name)) return null;
+  if (!/^[a-zA-Z0-9 _.-]+$/.test(name)) return null;
   return name;
 }
 
@@ -1013,46 +1045,21 @@ export function buildApp() {
     }
 
     const { folderKey, filename } = req.params;
-
-    if (!folderMapping.has(folderKey)) {
-      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
-    }
-
-    const folderPath = folderMapping.get(folderKey)!;
-    if (isUnsafeFilename(filename)) {
-      res.status(400).json({ error: 'Invalid filename' });
-      return;
-    }
-
     const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
-    const subpathError = validateSubpath(subpath);
-    if (subpathError) {
-      res.status(400).json({ error: subpathError });
+    const streamResult = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in streamResult) {
+      res.status(streamResult.status).json({ error: streamResult.error });
       return;
     }
+    const { fullPath: streamFullPath } = streamResult;
 
-    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
-    if (resolveError) {
-      res.status(400).json({ error: resolveError });
-      return;
-    }
-
-    const fullPath = path.join(targetDir, filename);
-    const resolvedFolder = path.resolve(folderPath);
-    const resolvedFull = path.resolve(fullPath);
-    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
-      res.status(400).json({ error: 'Path traversal detected' });
-      return;
-    }
-
-    if (!existsSync(fullPath)) {
+    if (!existsSync(streamFullPath)) {
       res.status(404).json({ error: 'File not found' });
       return;
     }
 
     try {
-      await handleStreamRequest(fullPath, filename, req, res, log);
+      await handleStreamRequest(streamFullPath, filename, req, res, log);
     } catch (err) {
       log('ERROR', 'Stream failed', { filename, error: String(err) });
       if (!res.headersSent) res.status(500).json({ error: 'Transcoding failed' });
@@ -1062,38 +1069,13 @@ export function buildApp() {
   // ── GET /api/browse/:folderKey/:filename ──────────────────────────────────
   app.get('/api/browse/:folderKey/:filename', authMiddlewareWithQuery, (req, res) => {
     const { folderKey, filename } = req.params;
-
-    if (!folderMapping.has(folderKey)) {
-      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
-    }
-
-    const folderPath = folderMapping.get(folderKey)!;
-    if (isUnsafeFilename(filename)) {
-      res.status(400).json({ error: 'Invalid filename' });
-      return;
-    }
-
     const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
-    const subpathError = validateSubpath(subpath);
-    if (subpathError) {
-      res.status(400).json({ error: subpathError });
+    const getResult = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in getResult) {
+      res.status(getResult.status).json({ error: getResult.error });
       return;
     }
-
-    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
-    if (resolveError) {
-      res.status(400).json({ error: resolveError });
-      return;
-    }
-
-    const fullPath = path.join(targetDir, filename);
-    const resolvedFolder = path.resolve(folderPath);
-    const resolvedFull = path.resolve(fullPath);
-    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
-      res.status(400).json({ error: 'Path traversal detected' });
-      return;
-    }
+    const { fullPath } = getResult;
 
     if (!existsSync(fullPath)) {
       res.status(404).json({ error: 'File not found' });
@@ -1108,38 +1090,13 @@ export function buildApp() {
   // ── DELETE /api/browse/:folderKey/:filename ───────────────────────────────
   app.delete('/api/browse/:folderKey/:filename', authMiddleware, async (req, res) => {
     const { folderKey, filename } = req.params;
-
-    if (!folderMapping.has(folderKey)) {
-      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
-    }
-
-    const folderPath = folderMapping.get(folderKey)!;
-    if (isUnsafeFilename(filename)) {
-      res.status(400).json({ error: 'Invalid filename' });
-      return;
-    }
-
     const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
-    const subpathError = validateSubpath(subpath);
-    if (subpathError) {
-      res.status(400).json({ error: subpathError });
+    const deleteResult = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in deleteResult) {
+      res.status(deleteResult.status).json({ error: deleteResult.error });
       return;
     }
-
-    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
-    if (resolveError) {
-      res.status(400).json({ error: resolveError });
-      return;
-    }
-
-    const fullPath = path.join(targetDir, filename);
-    const resolvedFolder = path.resolve(folderPath);
-    const resolvedFull = path.resolve(fullPath);
-    if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
-      res.status(400).json({ error: 'Path traversal detected' });
-      return;
-    }
+    const { fullPath } = deleteResult;
 
     if (!existsSync(fullPath)) {
       res.status(404).json({ error: 'File not found' });
@@ -1151,6 +1108,91 @@ export function buildApp() {
       res.json({ ok: true });
     } catch {
       res.status(500).json({ error: 'Failed to delete file' });
+    }
+  });
+
+  // ── POST /api/browse/:folderKey/:filename/move-to-subpath ─────────────────
+  app.post('/api/browse/:folderKey/:filename/move-to-subpath', authMiddleware, async (req, res) => {
+    const { folderKey, filename } = req.params;
+    const { sourceSubpath: rawSource, targetSubpath: rawTarget } = req.body;
+
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    if (isUnsafeFilename(filename)) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const sourceSubpath = typeof rawSource === 'string' ? rawSource : '';
+    const targetSubpath = typeof rawTarget === 'string' ? rawTarget : '';
+
+    const srcError = validateSubpath(sourceSubpath);
+    if (srcError) {
+      res.status(400).json({ error: srcError });
+      return;
+    }
+    const tgtError = validateSubpath(targetSubpath);
+    if (tgtError) {
+      res.status(400).json({ error: tgtError });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    const { resolved: srcDir, error: srcResolveError } = resolveSubpath(folderPath, sourceSubpath);
+    if (srcResolveError) {
+      res.status(400).json({ error: srcResolveError });
+      return;
+    }
+    const { resolved: dstDir, error: dstResolveError } = resolveSubpath(folderPath, targetSubpath);
+    if (dstResolveError) {
+      res.status(400).json({ error: dstResolveError });
+      return;
+    }
+
+    const srcPath = path.join(srcDir, filename);
+    const dstPath = path.join(dstDir, filename);
+
+    if (path.resolve(srcPath) === path.resolve(dstPath)) {
+      res.status(400).json({ error: 'Source and target are the same file' });
+      return;
+    }
+
+    if (!existsSync(srcPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+    if (existsSync(dstPath)) {
+      res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+      return;
+    }
+
+    try {
+      try {
+        await rename(srcPath, dstPath);
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'EEXIST') {
+          res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+          return;
+        }
+        if (code === 'EXDEV') {
+          await copyFile(srcPath, dstPath, fsConstants.COPYFILE_EXCL);
+          await unlink(srcPath);
+        } else {
+          throw err;
+        }
+      }
+      res.json({ ok: true });
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        res.status(409).json({ error: 'A file with that name already exists in the target folder' });
+        return;
+      }
+      log('ERROR', 'Move to subpath failed', { folderKey, filename, sourceSubpath, targetSubpath, error: String(err) });
+      res.status(500).json({ error: 'Failed to move file' });
     }
   });
 

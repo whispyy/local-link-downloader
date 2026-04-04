@@ -98,7 +98,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
     } finally {
       setLoading(false);
     }
-  }, [token, page, from, to, pathFilter]);
+  }, [authHeaders, onUnauthorized, page, from, to, pathFilter]);
 
   useEffect(() => { fetchUsage(); }, [fetchUsage]);
 

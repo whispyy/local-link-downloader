@@ -6,20 +6,10 @@ import QueuePage from './QueuePage.tsx';
 import BrowsePage from './BrowsePage.tsx';
 import LoginPage from './LoginPage.tsx';
 import UsagePage from './UsagePage.tsx';
+import VersionBadge from './VersionBadge.tsx';
 import './index.css';
 
 const SESSION_KEY = 'wd_token';
-
-// Build-time constant — rendered once, never changes at runtime.
-const VersionBadge = () => (
-  <a
-    href="#/usage"
-    className="fixed bottom-2 right-3 text-[10px] font-mono text-th-text-faint select-none opacity-50 hover:opacity-100 transition-opacity no-underline"
-    title={`Version: ${__COMMIT_HASH__}`}
-  >
-    {__COMMIT_HASH__}
-  </a>
-);
 
 function Root() {
   const [hash, setHash] = useState(window.location.hash);

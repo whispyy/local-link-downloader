@@ -28,8 +28,7 @@ export function isValidSession(token: string): boolean {
   const expectedSig = createHmac('sha256', process.env.APP_PASSWORD!)
     .update(expiryStr)
     .digest('hex');
-  if (expectedSig.length !== providedSig.length) return false;
-  return timingSafeEqual(Buffer.from(expectedSig), Buffer.from(providedSig));
+  return timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(providedSig, 'hex'));
 }
 
 /**

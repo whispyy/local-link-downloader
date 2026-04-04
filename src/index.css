@@ -77,3 +77,9 @@
     --color-progress-fill: #94a3b8;
   }
 }
+
+/* Drag-to-folder drop target highlight */
+.drop-target-highlight {
+  background-color: rgba(147, 51, 234, 0.08) !important;
+  box-shadow: inset 3px 0 0 rgb(147, 51, 234);
+}

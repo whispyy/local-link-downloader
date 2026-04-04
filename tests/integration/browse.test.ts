@@ -44,6 +44,12 @@
  *   B38 Serve file from subfolder
  *   B39 Delete file from subfolder
  *   B40 Path traversal blocked in subpath for file ops
+ *   B41 move-to-subpath moves file into subfolder
+ *   B42 move-to-subpath moves file to parent (empty targetSubpath)
+ *   B43 move-to-subpath rejects same source and target subpath
+ *   B44 move-to-subpath returns 409 if file exists at target
+ *   B45 move-to-subpath validates subpaths (traversal, depth)
+ *   B46 move-to-subpath requires auth
  */
 
 import request from 'supertest';
@@ -743,5 +749,121 @@ describe('POST /api/browse/:folderKey/mkdir — auth required', () => {
 
     expect(res.status).toBe(401);
     expect(existsSync(path.join(tmpDir, 'nope'))).toBe(false);
+  });
+});
+
+// ── move-to-subpath ─────────────────────────────────────────────────────────
+
+describe('POST /api/browse/:folderKey/:filename/move-to-subpath', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-mvsp-'));
+    mkdirSync(path.join(tmpDir, 'sub1'));
+    mkdirSync(path.join(tmpDir, 'sub1', 'sub2'));
+    writeFileSync(path.join(tmpDir, 'root-file.txt'), 'root');
+    writeFileSync(path.join(tmpDir, 'sub1', 'nested.txt'), 'nested');
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B41 — moves file into subfolder', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/root-file.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: 'sub1' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'root-file.txt'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'sub1', 'root-file.txt'))).toBe(true);
+    expect(readFileSync(path.join(tmpDir, 'sub1', 'root-file.txt'), 'utf-8')).toBe('root');
+  });
+
+  it('B42 — moves file to parent (empty targetSubpath)', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/nested.txt/move-to-subpath')
+      .send({ sourceSubpath: 'sub1', targetSubpath: '' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'sub1', 'nested.txt'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'nested.txt'))).toBe(true);
+    expect(readFileSync(path.join(tmpDir, 'nested.txt'), 'utf-8')).toBe('nested');
+  });
+
+  it('B43 — rejects same source and target subpath', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/root-file.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: '' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/same/i);
+  });
+
+  it('B44 — returns 409 if file exists at target', async () => {
+    writeFileSync(path.join(tmpDir, 'sub1', 'root-file.txt'), 'already-here');
+
+    const res = await request(app)
+      .post('/api/browse/media/root-file.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: 'sub1' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+    // Source untouched
+    expect(existsSync(path.join(tmpDir, 'root-file.txt'))).toBe(true);
+    expect(readFileSync(path.join(tmpDir, 'root-file.txt'), 'utf-8')).toBe('root');
+  });
+
+  it('B45 — validates subpaths (traversal and depth)', async () => {
+    const res1 = await request(app)
+      .post('/api/browse/media/root-file.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: '../evil' });
+    expect(res1.status).toBe(400);
+
+    const res2 = await request(app)
+      .post('/api/browse/media/root-file.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: 'a/b/c' });
+    expect(res2.status).toBe(400);
+  });
+});
+
+describe('POST /api/browse/:folderKey/:filename/move-to-subpath — auth required', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-mvsp-auth-'));
+    mkdirSync(path.join(tmpDir, 'sub1'));
+    writeFileSync(path.join(tmpDir, 'secret.txt'), 'classified');
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B46 — requires auth', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/secret.txt/move-to-subpath')
+      .send({ sourceSubpath: '', targetSubpath: 'sub1' });
+
+    expect(res.status).toBe(401);
+    expect(existsSync(path.join(tmpDir, 'secret.txt'))).toBe(true);
   });
 });

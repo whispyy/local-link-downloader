@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuthHeaders } from './useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical } from 'lucide-react';
 import { formatBytes, formatDate, getMediaType } from './utils';
 import NavBar from './NavBar';
+import { useDragToFolder } from './useDragToFolder';
 
 interface BrowseFile {
   name: string;
@@ -14,6 +15,49 @@ interface BrowsePageProps {
   token: string;
   onUnauthorized: () => void;
   authEnabled: boolean;
+}
+
+interface NewFolderFormProps {
+  name: string;
+  onChange: (v: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+  className?: string;
+  inputClassName?: string;
+}
+
+function NewFolderForm({ name, onChange, onConfirm, onCancel, loading, className = '', inputClassName = '' }: NewFolderFormProps) {
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <FolderPlus className="w-4 h-4 text-amber-500 shrink-0" />
+      <input
+        type="text"
+        autoFocus
+        value={name}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onConfirm();
+          if (e.key === 'Escape') onCancel();
+        }}
+        placeholder="Folder name"
+        className={`px-3 py-1.5 text-sm border border-th-border rounded-lg bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring ${inputClassName}`}
+      />
+      <button
+        onClick={onConfirm}
+        disabled={loading || !name.trim()}
+        className="px-3 py-1.5 text-sm font-medium bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition disabled:opacity-50"
+      >
+        {loading ? 'Creating…' : 'Create'}
+      </button>
+      <button
+        onClick={onCancel}
+        className="px-2 py-1.5 text-sm text-th-text-dim hover:text-th-text transition"
+      >
+        Cancel
+      </button>
+    </div>
+  );
 }
 
 function MediaIcon({ filename }: { filename: string }) {
@@ -52,6 +96,20 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingLoading, setCreatingLoading] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close "more" dropdown on outside click
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [moreMenuOpen]);
 
   const authHeaders = useAuthHeaders(token);
 
@@ -71,7 +129,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         setTranscoding(tc);
       })
       .catch(() => setError('Could not load configuration'));
-  }, []);
+  }, [authHeaders, onUnauthorized]);
 
   const fetchFiles = useCallback(async () => {
     if (!folderKey) return;
@@ -92,7 +150,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setLoading(false);
     }
-  }, [folderKey, page, limit, subpath, token]);
+  }, [folderKey, page, limit, subpath, authHeaders, onUnauthorized]);
 
   useEffect(() => {
     fetchFiles();
@@ -141,7 +199,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         setTextLoading(false);
       }
     }
-  }, [folderKey, token]);
+  }, [folderKey, subpathParam, token]);
 
   const handleDelete = useCallback(async (filename: string) => {
     setDeleting(true);
@@ -167,7 +225,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setDeleting(false);
     }
-  }, [folderKey, token, selectedFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
 
   const handleMove = useCallback(async (filename: string, targetFolder: string) => {
     setMoving(true);
@@ -194,7 +252,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setMoving(false);
     }
-  }, [folderKey, token, selectedFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
 
   const handleNavigateInto = useCallback((dirName: string) => {
     setSubpath(prev => prev === '' ? dirName : `${prev}/${dirName}`);
@@ -239,9 +297,42 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setCreatingLoading(false);
     }
-  }, [folderKey, newFolderName, subpath, token, fetchFiles]);
+  }, [folderKey, newFolderName, subpath, authHeaders, onUnauthorized, fetchFiles]);
 
   const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
+
+  const handleMoveToSubpath = useCallback(async (filename: string, targetDirName: string) => {
+    let targetSubpath: string;
+    if (targetDirName === '..') {
+      // Move to parent
+      const segments = subpath.split('/');
+      targetSubpath = segments.slice(0, -1).join('/');
+    } else {
+      targetSubpath = subpath === '' ? targetDirName : `${subpath}/${targetDirName}`;
+    }
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/move-to-subpath`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceSubpath: subpath, targetSubpath }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Move failed' }));
+        setError(data.error || 'Move failed');
+        return;
+      }
+      if (selectedFile === filename) {
+        setSelectedFile(null);
+        setTextContent(null);
+      }
+      fetchFiles();
+    } catch {
+      setError('Failed to move file');
+    }
+  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
+
+  const drag = useDragToFolder(handleMoveToSubpath);
 
   const mediaType = selectedFile ? getMediaType(selectedFile) : null;
 
@@ -257,10 +348,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
           <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Browse Files</h1>
         </div>
 
-        {/* Folder selector + transcoding toggle */}
-        <div className="flex flex-wrap items-center gap-4 mb-4">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          {/* Left: folder selector + free space */}
           {folders.length > 0 && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 mr-auto">
               <select
                 value={folderKey}
                 onChange={(e) => handleFolderChange(e.target.value)}
@@ -272,26 +364,104 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 ))}
               </select>
               {freeSpace[folderKey] != null && (
-                <span className="text-xs text-th-text-dim">{formatBytes(freeSpace[folderKey])} free</span>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-th-bg-alt text-th-text-dim border border-th-border-lighter">
+                  {formatBytes(freeSpace[folderKey])} free
+                </span>
               )}
             </div>
           )}
-          {transcodingAvailable && (
-            <label className="flex items-center gap-2 text-sm text-th-text-sub cursor-pointer select-none">
-              <RefreshCw className="w-4 h-4" />
-              <span>Transcode</span>
+          {/* Right: actions — inline on sm+, "more" menu on mobile */}
+          {/* Desktop inline actions */}
+          <div className="hidden sm:flex items-center gap-3">
+            {currentDepth < 2 && folderKey && (
+              creatingFolder ? (
+                <NewFolderForm
+                  name={newFolderName}
+                  onChange={setNewFolderName}
+                  onConfirm={handleCreateFolder}
+                  onCancel={() => { setCreatingFolder(false); setNewFolderName(''); }}
+                  loading={creatingLoading}
+                  inputClassName="w-36"
+                />
+              ) : (
+                <button
+                  onClick={() => setCreatingFolder(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-th-text-sub hover:text-th-text border border-th-border rounded-lg hover:bg-th-bg-alt transition"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  New Folder
+                </button>
+              )
+            )}
+            {transcodingAvailable && (
+              <label className="flex items-center gap-2 text-sm text-th-text-sub cursor-pointer select-none">
+                <RefreshCw className="w-4 h-4" />
+                <span>Transcode</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={transcoding}
+                  onClick={() => setTranscoding(t => !t)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${transcoding ? 'bg-purple-500' : 'bg-th-border'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${transcoding ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                </button>
+              </label>
+            )}
+          </div>
+          {/* Mobile "more" menu */}
+          {((currentDepth < 2 && folderKey) || transcodingAvailable) && (
+            <div className="relative sm:hidden" ref={moreMenuRef}>
               <button
-                type="button"
-                role="switch"
-                aria-checked={transcoding}
-                onClick={() => setTranscoding(t => !t)}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${transcoding ? 'bg-purple-500' : 'bg-th-border'}`}
+                onClick={() => setMoreMenuOpen(o => !o)}
+                className="p-2 rounded-lg text-th-text-sub hover:bg-th-bg-alt border border-th-border transition"
               >
-                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${transcoding ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                <MoreVertical className="w-4 h-4" />
               </button>
-            </label>
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-th-bg border border-th-border rounded-lg shadow-lg z-20 py-1">
+                  {currentDepth < 2 && folderKey && (
+                    <button
+                      onClick={() => { setMoreMenuOpen(false); setCreatingFolder(true); }}
+                      className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-th-text-sub hover:bg-th-bg-alt transition text-left"
+                    >
+                      <FolderPlus className="w-4 h-4" />
+                      New Folder
+                    </button>
+                  )}
+                  {transcodingAvailable && (
+                    <label className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-th-text-sub hover:bg-th-bg-alt transition cursor-pointer">
+                      <RefreshCw className="w-4 h-4" />
+                      <span className="flex-1">Transcode</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={transcoding}
+                        onClick={() => setTranscoding(t => !t)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${transcoding ? 'bg-purple-500' : 'bg-th-border'}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${transcoding ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                      </button>
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
+
+        {/* Mobile: inline folder creation (shown below toolbar) */}
+        {creatingFolder && (
+          <NewFolderForm
+            name={newFolderName}
+            onChange={setNewFolderName}
+            onConfirm={handleCreateFolder}
+            onCancel={() => { setCreatingFolder(false); setNewFolderName(''); }}
+            loading={creatingLoading}
+            className="sm:hidden mb-4"
+            inputClassName="flex-1 min-w-0"
+          />
+        )}
 
         {/* Breadcrumbs */}
         {subpath !== '' && (
@@ -317,50 +487,6 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 )}
               </span>
             ))}
-          </div>
-        )}
-
-        {/* New folder */}
-        {currentDepth < 2 && folderKey && (
-          <div className="flex items-center gap-2 mb-4">
-            {creatingFolder ? (
-              <>
-                <FolderPlus className="w-4 h-4 text-amber-500 shrink-0" />
-                <input
-                  type="text"
-                  autoFocus
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateFolder();
-                    if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
-                  }}
-                  placeholder="Folder name"
-                  className="px-3 py-1.5 text-sm border border-th-border rounded-lg bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring"
-                />
-                <button
-                  onClick={handleCreateFolder}
-                  disabled={creatingLoading || !newFolderName.trim()}
-                  className="px-3 py-1.5 text-sm font-medium bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition disabled:opacity-50"
-                >
-                  {creatingLoading ? 'Creating…' : 'Create'}
-                </button>
-                <button
-                  onClick={() => { setCreatingFolder(false); setNewFolderName(''); }}
-                  className="px-3 py-1.5 text-sm font-medium text-th-text-dim hover:text-th-text transition"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setCreatingFolder(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-th-text-sub hover:text-th-text border border-th-border rounded-lg hover:bg-th-bg-alt transition"
-              >
-                <FolderPlus className="w-4 h-4" />
-                New Folder
-              </button>
-            )}
           </div>
         )}
 
@@ -442,6 +568,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   <tr
                     className="hover:bg-th-bg-alt transition cursor-pointer"
                     onClick={() => handleBreadcrumbClick(subpath.split('/').length - 2)}
+                    {...drag.backRow()}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -460,6 +587,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     key={`dir-${dirName}`}
                     className="hover:bg-th-bg-alt transition cursor-pointer"
                     onClick={() => handleNavigateInto(dirName)}
+                    {...drag.dirRow(dirName)}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -479,6 +607,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                       key={file.name}
                       className={`hover:bg-th-bg-alt transition ${type ? 'cursor-pointer' : ''} ${selectedFile === file.name ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
                       onClick={() => { if (type) handleSelectFile(file.name); }}
+                      {...drag.fileRow(file.name)}
                     >
                       <td className="px-4 py-3 max-w-0 min-w-[150px]">
                         <div className="flex items-center gap-2 min-w-0">
@@ -518,7 +647,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                 autoFocus
                                 defaultValue=""
                                 onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }}
-                                className="px-2 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none"
+                                className="pl-2 pr-4 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none"
                               >
                                 <option value="" disabled>Move to…</option>
                                 {folders.filter(f => f !== folderKey).map(f => (

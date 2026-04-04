@@ -313,7 +313,17 @@
               <tr class="hover:bg-slate-800/30 transition-colors">
                 <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">APP_PASSWORD</code></td>
                 <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">unset</td>
-                <td class="py-3.5 px-5 text-slate-400">When set, requires a password prompt. Sessions last 8 hours.</td>
+                <td class="py-3.5 px-5 text-slate-400">When set, requires a password prompt before access.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">SESSION_TTL_HOURS</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">168</td>
+                <td class="py-3.5 px-5 text-slate-400">How long an authenticated session stays valid, in hours (default 7 days).</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">ENABLE_TRANSCODING</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">false</td>
+                <td class="py-3.5 px-5 text-slate-400">Set to <code class="text-slate-300 text-xs">true</code> to enable on-the-fly video transcoding via FFmpeg.</td>
               </tr>
               <tr class="hover:bg-slate-800/30 transition-colors">
                 <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">MAX_UPLOAD_SIZE</code></td>
@@ -328,7 +338,17 @@
               <tr class="hover:bg-slate-800/30 transition-colors">
                 <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">LOG_DIR</code></td>
                 <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">./logs</td>
-                <td class="py-3.5 px-5 text-slate-400">Directory where <code class="text-slate-300 text-xs">downloads.log</code> is written.</td>
+                <td class="py-3.5 px-5 text-slate-400">Directory where <code class="text-slate-300 text-xs">downloads.log</code> and usage data are written.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">DISCORD_WEBHOOK_URL</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">unset</td>
+                <td class="py-3.5 px-5 text-slate-400">Discord webhook URL for download/upload notifications.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">DISCORD_ERROR_WEBHOOK_URL</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">unset</td>
+                <td class="py-3.5 px-5 text-slate-400">Separate Discord webhook for error-level notifications.</td>
               </tr>
             </tbody>
           </table>

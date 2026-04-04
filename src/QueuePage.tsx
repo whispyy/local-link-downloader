@@ -137,7 +137,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
         return next;
       });
     }
-  }, [token]);
+  }, [authHeaders, onUnauthorized]);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -170,7 +170,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [authHeaders, onUnauthorized]);
 
   useEffect(() => {
     fetchJobs();
