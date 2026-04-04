@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthHeaders } from './useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus } from 'lucide-react';
 import { formatBytes, formatDate, getMediaType } from './utils';
 import NavBar from './NavBar';
 
@@ -47,6 +47,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [deleting, setDeleting] = useState(false);
   const [moveTarget, setMoveTarget] = useState<string | null>(null); // filename being moved
   const [moving, setMoving] = useState(false);
+  const [subpath, setSubpath] = useState('');
+  const [dirs, setDirs] = useState<string[]>([]);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingLoading, setCreatingLoading] = useState(false);
 
   const authHeaders = useAuthHeaders(token);
 
@@ -73,7 +78,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}`, {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}`, {
         headers: authHeaders,
       });
       if (res.status === 401) { onUnauthorized(); return; }
@@ -81,12 +86,13 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       const data = await res.json();
       setFiles(data.files);
       setTotal(data.total);
+      setDirs((data.dirs || []).map((d: { name: string }) => d.name));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load files');
     } finally {
       setLoading(false);
     }
-  }, [folderKey, page, limit, token]);
+  }, [folderKey, page, limit, subpath, token]);
 
   useEffect(() => {
     fetchFiles();
@@ -94,16 +100,19 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
+  const subpathParam = subpath ? `&subpath=${encodeURIComponent(subpath)}` : '';
+
   const fileUrl = (filename: string) =>
-    `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+    `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`;
 
   const videoSrc = (filename: string) =>
     transcoding
-      ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}`
+      ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}${subpathParam}`
       : fileUrl(filename);
 
   const handleFolderChange = (key: string) => {
     setFolderKey(key);
+    setSubpath('');
     setPage(1);
     setSelectedFile(null);
     setTextContent(null);
@@ -117,7 +126,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setTextLoading(true);
       try {
         const res = await fetch(
-          `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`,
+          `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
         );
         if (res.ok) {
           const text = await res.text();
@@ -137,7 +146,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const handleDelete = useCallback(async (filename: string) => {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}`, {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?subpath=${encodeURIComponent(subpath)}`, {
         method: 'DELETE',
         headers: authHeaders,
       });
@@ -166,7 +175,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/move`, {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetFolder }),
+        body: JSON.stringify({ targetFolder, sourceSubpath: subpath }),
       });
       if (res.status === 401) { onUnauthorized(); return; }
       if (!res.ok) {
@@ -186,6 +195,53 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setMoving(false);
     }
   }, [folderKey, token, selectedFile, fetchFiles]);
+
+  const handleNavigateInto = useCallback((dirName: string) => {
+    setSubpath(prev => prev === '' ? dirName : `${prev}/${dirName}`);
+    setPage(1);
+    setSelectedFile(null);
+    setTextContent(null);
+  }, []);
+
+  const handleBreadcrumbClick = useCallback((index: number) => {
+    if (index === -1) {
+      setSubpath('');
+    } else {
+      const segments = subpath.split('/');
+      setSubpath(segments.slice(0, index + 1).join('/'));
+    }
+    setPage(1);
+    setSelectedFile(null);
+    setTextContent(null);
+  }, [subpath]);
+
+  const handleCreateFolder = useCallback(async () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed || trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) return;
+    setCreatingLoading(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/mkdir`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed, subpath }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Create failed' }));
+        setError(data.error || 'Create failed');
+        return;
+      }
+      setCreatingFolder(false);
+      setNewFolderName('');
+      fetchFiles();
+    } catch {
+      setError('Failed to create folder');
+    } finally {
+      setCreatingLoading(false);
+    }
+  }, [folderKey, newFolderName, subpath, token, fetchFiles]);
+
+  const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
 
   const mediaType = selectedFile ? getMediaType(selectedFile) : null;
 
@@ -236,6 +292,77 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             </label>
           )}
         </div>
+
+        {/* Breadcrumbs */}
+        {subpath !== '' && (
+          <div className="flex items-center gap-1 mb-4 text-sm flex-wrap">
+            <button
+              onClick={() => handleBreadcrumbClick(-1)}
+              className="text-purple-500 hover:text-purple-400 transition font-medium"
+            >
+              {folderKey}
+            </button>
+            {subpath.split('/').map((segment, i, arr) => (
+              <span key={i} className="flex items-center gap-1">
+                <ChevronRight className="w-4 h-4 text-th-text-faint" />
+                {i === arr.length - 1 ? (
+                  <span className="text-th-text font-medium">{segment}</span>
+                ) : (
+                  <button
+                    onClick={() => handleBreadcrumbClick(i)}
+                    className="text-purple-500 hover:text-purple-400 transition font-medium"
+                  >
+                    {segment}
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* New folder */}
+        {currentDepth < 2 && folderKey && (
+          <div className="flex items-center gap-2 mb-4">
+            {creatingFolder ? (
+              <>
+                <FolderPlus className="w-4 h-4 text-amber-500 shrink-0" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateFolder();
+                    if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName(''); }
+                  }}
+                  placeholder="Folder name"
+                  className="px-3 py-1.5 text-sm border border-th-border rounded-lg bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring"
+                />
+                <button
+                  onClick={handleCreateFolder}
+                  disabled={creatingLoading || !newFolderName.trim()}
+                  className="px-3 py-1.5 text-sm font-medium bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition disabled:opacity-50"
+                >
+                  {creatingLoading ? 'Creating…' : 'Create'}
+                </button>
+                <button
+                  onClick={() => { setCreatingFolder(false); setNewFolderName(''); }}
+                  className="px-3 py-1.5 text-sm font-medium text-th-text-dim hover:text-th-text transition"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setCreatingFolder(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-th-text-sub hover:text-th-text border border-th-border rounded-lg hover:bg-th-bg-alt transition"
+              >
+                <FolderPlus className="w-4 h-4" />
+                New Folder
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -296,7 +423,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         {/* File list */}
         {loading ? (
           <div className="py-20 text-center text-th-text-faint text-sm">Loading...</div>
-        ) : files.length === 0 ? (
+        ) : files.length === 0 && dirs.length === 0 && !subpath ? (
           <div className="py-20 text-center text-th-text-faint text-sm">No files in this folder.</div>
         ) : (
           <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
@@ -310,6 +437,41 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 </tr>
               </thead>
               <tbody className="divide-y divide-th-border-lighter">
+                {/* Back row */}
+                {subpath !== '' && (
+                  <tr
+                    className="hover:bg-th-bg-alt transition cursor-pointer"
+                    onClick={() => handleBreadcrumbClick(subpath.split('/').length - 2)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0"><Folder className="w-4 h-4 text-amber-500" /></span>
+                        <span className="font-medium text-th-text-sub">..</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
+                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
+                    <td className="px-4 py-3"></td>
+                  </tr>
+                )}
+                {/* Directory rows */}
+                {dirs.map((dirName) => (
+                  <tr
+                    key={`dir-${dirName}`}
+                    className="hover:bg-th-bg-alt transition cursor-pointer"
+                    onClick={() => handleNavigateInto(dirName)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0"><Folder className="w-4 h-4 text-amber-500" /></span>
+                        <span className="font-medium text-th-text-sub">{dirName}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
+                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
+                    <td className="px-4 py-3"></td>
+                  </tr>
+                ))}
                 {files.map((file) => {
                   const type = getMediaType(file.name);
                   return (

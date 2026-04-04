@@ -14,7 +14,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
-import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile } from 'fs/promises';
+import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -127,6 +127,37 @@ export function validateExtension(filename: string, allowedExtensions: string[])
 
 export function isUnsafeFilename(filename: string): boolean {
   return !filename || filename.includes('..') || filename.includes('/') || filename.includes('\\');
+}
+
+/** Validates a subpath query param. Returns error message or null if valid. */
+export function validateSubpath(subpath: string): string | null {
+  if (subpath === '') return null;
+  if (subpath.includes('\\')) return 'Backslashes not allowed';
+  if (subpath.includes('..')) return 'Path traversal not allowed';
+  const segments = subpath.split('/');
+  if (segments.some(s => s === '')) return 'Empty path segment';
+  if (segments.length > 2) return 'Max depth of 2 exceeded';
+  return null;
+}
+
+/** Joins folderPath + subpath and verifies the result stays inside folderPath. */
+export function resolveSubpath(folderPath: string, subpath: string): { resolved: string; error?: string } {
+  const target = path.join(folderPath, subpath);
+  const resolvedFolder = path.resolve(folderPath);
+  const resolvedTarget = path.resolve(target);
+  if (resolvedTarget !== resolvedFolder && !resolvedTarget.startsWith(resolvedFolder + path.sep)) {
+    return { resolved: '', error: 'Path traversal detected' };
+  }
+  return { resolved: resolvedTarget };
+}
+
+/** Sanitizes a folder name for mkdir. Returns null if invalid. */
+export function sanitizeFolderName(name: string): string | null {
+  if (!name || name.length > 100) return null;
+  if (name.startsWith('.')) return null;
+  if (name.includes('..') || name.includes('/') || name.includes('\\')) return null;
+  if (!/^[a-zA-Z0-9 _.\-]+$/.test(name)) return null;
+  return name;
 }
 
 export function isInternalIP(hostname: string): boolean {
@@ -859,8 +890,21 @@ export function buildApp() {
     }
 
     const folderPath = folderMapping.get(folderKey)!;
-    if (!existsSync(folderPath)) {
-      res.json({ files: [], total: 0 });
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    if (!existsSync(targetDir)) {
+      res.json({ files: [], dirs: [], total: 0, subpath, maxDepth: 2 });
       return;
     }
 
@@ -868,13 +912,13 @@ export function buildApp() {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
 
     try {
-      const entries = await readdir(folderPath, { withFileTypes: true });
+      const entries = await readdir(targetDir, { withFileTypes: true });
       const fileEntries = entries.filter(e => e.isFile());
 
       // Gather stats for all files
       const fileInfos = await Promise.all(
         fileEntries.map(async (entry) => {
-          const filePath = path.join(folderPath, entry.name);
+          const filePath = path.join(targetDir, entry.name);
           const fileStat = await stat(filePath);
           return {
             name: entry.name,
@@ -891,10 +935,71 @@ export function buildApp() {
       const offset = (page - 1) * limit;
       const paged = fileInfos.slice(offset, offset + limit);
 
-      res.json({ files: paged, total, page, limit });
+      // Include directories if current depth < 2
+      const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
+      let dirs: { name: string }[] = [];
+      if (currentDepth < 2) {
+        dirs = entries
+          .filter(e => e.isDirectory())
+          .map(e => ({ name: e.name }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      res.json({ files: paged, dirs, total, page, limit, subpath, maxDepth: 2 });
     } catch (err) {
       log('ERROR', 'Browse listing failed', { folderKey, error: String(err) });
       res.status(500).json({ error: 'Failed to list files' });
+    }
+  });
+
+  // ── POST /api/browse/:folderKey/mkdir ──────────────────────────────────────
+  app.post('/api/browse/:folderKey/mkdir', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const { name, subpath: rawSubpath } = req.body;
+
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    const sanitized = sanitizeFolderName(name);
+    if (!sanitized) {
+      res.status(400).json({ error: 'Invalid folder name' });
+      return;
+    }
+
+    // Check if creating would exceed depth 2
+    const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
+    if (currentDepth >= 2) {
+      res.status(400).json({ error: 'Max depth of 2 exceeded' });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    const newSubpath = subpath === '' ? sanitized : `${subpath}/${sanitized}`;
+    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, newSubpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    try {
+      await mkdir(targetDir, { recursive: false });
+      res.json({ ok: true, name: sanitized });
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        res.status(409).json({ error: 'Folder already exists' });
+        return;
+      }
+      log('ERROR', 'mkdir failed', { folderKey, name: sanitized, error: String(err) });
+      res.status(500).json({ error: 'Failed to create folder' });
     }
   });
 
@@ -920,7 +1025,20 @@ export function buildApp() {
       return;
     }
 
-    const fullPath = path.join(folderPath, filename);
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    const fullPath = path.join(targetDir, filename);
     const resolvedFolder = path.resolve(folderPath);
     const resolvedFull = path.resolve(fullPath);
     if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
@@ -956,7 +1074,20 @@ export function buildApp() {
       return;
     }
 
-    const fullPath = path.join(folderPath, filename);
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    const fullPath = path.join(targetDir, filename);
     const resolvedFolder = path.resolve(folderPath);
     const resolvedFull = path.resolve(fullPath);
     if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
@@ -989,7 +1120,20 @@ export function buildApp() {
       return;
     }
 
-    const fullPath = path.join(folderPath, filename);
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, subpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    const fullPath = path.join(targetDir, filename);
     const resolvedFolder = path.resolve(folderPath);
     const resolvedFull = path.resolve(fullPath);
     if (!resolvedFull.startsWith(resolvedFolder + path.sep)) {
@@ -1013,7 +1157,7 @@ export function buildApp() {
   // ── POST /api/browse/:folderKey/:filename/move ─────────────────────────────
   app.post('/api/browse/:folderKey/:filename/move', authMiddleware, async (req, res) => {
     const { folderKey, filename } = req.params;
-    const { targetFolder } = req.body;
+    const { targetFolder, sourceSubpath: rawSourceSubpath } = req.body;
     if (!targetFolder || typeof targetFolder !== 'string') {
       res.status(400).json({ error: 'Missing targetFolder in body' });
       return;
@@ -1038,9 +1182,23 @@ export function buildApp() {
       return;
     }
 
+    const sourceSubpath = typeof rawSourceSubpath === 'string' ? rawSourceSubpath : '';
+    const subpathError = validateSubpath(sourceSubpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
     const srcFolder = folderMapping.get(folderKey)!;
     const dstFolder = folderMapping.get(targetFolder)!;
-    const srcPath = path.join(srcFolder, filename);
+
+    const { resolved: srcDir, error: srcResolveError } = resolveSubpath(srcFolder, sourceSubpath);
+    if (srcResolveError) {
+      res.status(400).json({ error: srcResolveError });
+      return;
+    }
+
+    const srcPath = path.join(srcDir, filename);
     const dstPath = path.join(dstFolder, filename);
 
     // Path traversal checks
@@ -1062,9 +1220,6 @@ export function buildApp() {
       return;
     }
     try {
-      // rename works across same filesystem; fall back to copy+delete for cross-device.
-      // COPYFILE_EXCL makes the copy atomic with respect to the existence check —
-      // no TOCTOU window between existsSync and the write.
       try {
         await rename(srcPath, dstPath);
       } catch (err: unknown) {
