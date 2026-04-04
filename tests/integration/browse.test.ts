@@ -29,10 +29,25 @@
  *   B23 Move returns 409 when file already exists in target
  *   B24 Move blocks path traversal
  *   B25 Move requires auth when APP_PASSWORD is set
+ *   B26 Root listing includes dirs array
+ *   B27 subpath=sub1 lists files inside sub1
+ *   B28 subpath=sub1/sub2 works at depth 2
+ *   B29 subpath=a/b/c returns 400 (exceeds depth)
+ *   B30 subpath=../evil returns 400 (traversal)
+ *   B31 Non-existent subpath returns empty
+ *   B32 mkdir at root level
+ *   B33 mkdir inside subfolder (depth 2)
+ *   B34 mkdir rejected at depth 2 (would be depth 3)
+ *   B35 mkdir rejects names with .. or /
+ *   B36 mkdir returns 409 if exists
+ *   B37 mkdir requires auth
+ *   B38 Serve file from subfolder
+ *   B39 Delete file from subfolder
+ *   B40 Path traversal blocked in subpath for file ops
  */
 
 import request from 'supertest';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { buildApp } from '../../server/app';
@@ -502,5 +517,231 @@ describe('GET /api/browse — auth required', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.files).toBeInstanceOf(Array);
+  });
+});
+
+// ── Subfolder browsing ──────────────────────────────────────────────────────
+
+describe('GET /api/browse — subfolder navigation', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-subfolder-'));
+
+    // Root files
+    writeFileSync(path.join(tmpDir, 'root.txt'), 'root-content');
+
+    // sub1/
+    mkdirSync(path.join(tmpDir, 'sub1'));
+    writeFileSync(path.join(tmpDir, 'sub1', 'nested.txt'), 'nested-content');
+
+    // sub1/sub2/
+    mkdirSync(path.join(tmpDir, 'sub1', 'sub2'));
+    writeFileSync(path.join(tmpDir, 'sub1', 'sub2', 'deep.txt'), 'deep-content');
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B26 — root listing includes dirs array', async () => {
+    const res = await request(app).get('/api/browse/media');
+
+    expect(res.status).toBe(200);
+    expect(res.body.dirs).toBeInstanceOf(Array);
+    const dirNames = res.body.dirs.map((d: { name: string }) => d.name);
+    expect(dirNames).toContain('sub1');
+    expect(res.body.subpath).toBe('');
+    expect(res.body.maxDepth).toBe(2);
+  });
+
+  it('B27 — subpath=sub1 lists files inside sub1', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=sub1');
+
+    expect(res.status).toBe(200);
+    const names = res.body.files.map((f: { name: string }) => f.name);
+    expect(names).toContain('nested.txt');
+    expect(names).not.toContain('root.txt');
+    // sub2 should appear in dirs
+    const dirNames = res.body.dirs.map((d: { name: string }) => d.name);
+    expect(dirNames).toContain('sub2');
+  });
+
+  it('B28 — subpath=sub1/sub2 works at depth 2', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=sub1/sub2');
+
+    expect(res.status).toBe(200);
+    const names = res.body.files.map((f: { name: string }) => f.name);
+    expect(names).toContain('deep.txt');
+    // At depth 2, dirs should be empty (can't navigate deeper)
+    expect(res.body.dirs).toEqual([]);
+  });
+
+  it('B29 — subpath=a/b/c returns 400 (exceeds depth)', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=a/b/c');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/depth/i);
+  });
+
+  it('B30 — subpath=../evil returns 400 (traversal)', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=../evil');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/traversal/i);
+  });
+
+  it('B31 — non-existent subpath returns empty', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=nonexistent');
+
+    expect(res.status).toBe(200);
+    expect(res.body.files).toEqual([]);
+    expect(res.body.dirs).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
+
+  it('B38 — serve file from subfolder', async () => {
+    const res = await request(app)
+      .get('/api/browse/media/nested.txt?subpath=sub1')
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.toString()).toBe('nested-content');
+  });
+
+  it('B39 — delete file from subfolder', async () => {
+    // Create a disposable file
+    writeFileSync(path.join(tmpDir, 'sub1', 'deleteme.txt'), 'delete-me');
+
+    const res = await request(app).delete('/api/browse/media/deleteme.txt?subpath=sub1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'sub1', 'deleteme.txt'))).toBe(false);
+  });
+
+  it('B40 — path traversal blocked in subpath for file ops', async () => {
+    const res = await request(app).get('/api/browse/media/root.txt?subpath=sub1/../../');
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── mkdir ───────────────────────────────────────────────────────────────────
+
+describe('POST /api/browse/:folderKey/mkdir', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-mkdir-'));
+    mkdirSync(path.join(tmpDir, 'existing'));
+    mkdirSync(path.join(tmpDir, 'level1'));
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B32 — mkdir at root level', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'newfolder' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.name).toBe('newfolder');
+    expect(existsSync(path.join(tmpDir, 'newfolder'))).toBe(true);
+  });
+
+  it('B33 — mkdir inside subfolder (depth 2)', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'nested', subpath: 'level1' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'level1', 'nested'))).toBe(true);
+  });
+
+  it('B34 — mkdir rejected at depth 2 (would be depth 3)', async () => {
+    mkdirSync(path.join(tmpDir, 'level1', 'level2'));
+
+    const res = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'tooDeep', subpath: 'level1/level2' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/depth/i);
+  });
+
+  it('B35 — mkdir rejects names with .. or /', async () => {
+    const res1 = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: '../evil' });
+    expect(res1.status).toBe(400);
+
+    const res2 = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'foo/bar' });
+    expect(res2.status).toBe(400);
+  });
+
+  it('B36 — mkdir returns 409 if exists', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'existing' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+  });
+});
+
+describe('POST /api/browse/:folderKey/mkdir — auth required', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-mkdir-auth-'));
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B37 — mkdir requires auth', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/mkdir')
+      .send({ name: 'nope' });
+
+    expect(res.status).toBe(401);
+    expect(existsSync(path.join(tmpDir, 'nope'))).toBe(false);
   });
 });
