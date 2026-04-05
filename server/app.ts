@@ -49,10 +49,13 @@ export interface DownloadJob {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _wtClient: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getWTClient(): any {
+async function getWTClient(): Promise<any> {
   if (!_wtClient) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const WTC = require('webtorrent');
+    // Dynamic import — webtorrent is ESM-only (top-level await).
+    // Use Function to prevent ts-node/CJS from converting import() to require().
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const dynamicImport = new Function('mod', 'return import(mod)') as (mod: string) => Promise<{ default: new (opts: Record<string, unknown>) => unknown }>;
+    const { default: WTC } = await dynamicImport('webtorrent');
     // utp: false disables the utp-native addon (a compiled binary that segfaults
     // on platform/arch mismatches between build and runtime environments).
     // Pure TCP is used instead — functionally identical for downloading.
@@ -634,7 +637,7 @@ export function buildApp() {
     log('INFO', 'Torrent job created', { jobId, folderKey });
     notifyDiscord(`🧲 Torrent started → \`${folderKey}\``);
 
-    setImmediate(() => {
+    setImmediate(async () => {
       const j = jobs.get(jobId);
       if (!j || j.status === 'cancelled') {
         // Job was cancelled before we got here — just ensure cleanup timer is set
@@ -645,9 +648,10 @@ export function buildApp() {
       j.downloadedBytes = 0;
       j.updatedAt = new Date().toISOString();
 
-      let client: ReturnType<typeof getWTClient>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let client: any;
       try {
-        client = getWTClient();
+        client = await getWTClient();
       } catch (err) {
         j.status = 'error';
         j.message = err instanceof Error ? err.message : 'Failed to initialize torrent client';
