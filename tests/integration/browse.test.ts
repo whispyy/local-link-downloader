@@ -57,6 +57,9 @@
  *   B51 rmdir deletes a subfolder and its contents
  *   B52 rmdir returns 404 for non-existent dir
  *   B53 rmdir rejects invalid names
+ *   B54 rename-dir requires auth
+ *   B55 rmdir requires auth
+ *   B56 rename-dir with nested subpath
  */
 
 import request from 'supertest';
@@ -943,6 +946,52 @@ describe('POST /api/browse/:folderKey/rename-dir', () => {
       .send({ subpath: '', oldName: 'myfolder', newName: 'foo/bar' });
     expect(res2.status).toBe(400);
   });
+
+  it('B56 — renames a subfolder with nested subpath', async () => {
+    mkdirSync(path.join(tmpDir, 'myfolder', 'child'));
+    writeFileSync(path.join(tmpDir, 'myfolder', 'child', 'deep.txt'), 'deep');
+
+    const res = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: 'myfolder', oldName: 'child', newName: 'renamed-child' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.name).toBe('renamed-child');
+    expect(existsSync(path.join(tmpDir, 'myfolder', 'child'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'myfolder', 'renamed-child'))).toBe(true);
+    expect(readFileSync(path.join(tmpDir, 'myfolder', 'renamed-child', 'deep.txt'), 'utf-8')).toBe('deep');
+  });
+});
+
+describe('POST /api/browse/:folderKey/rename-dir — auth required', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-renamedir-auth-'));
+    mkdirSync(path.join(tmpDir, 'myfolder'));
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B54 — requires auth', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'myfolder', newName: 'nope' });
+
+    expect(res.status).toBe(401);
+    expect(existsSync(path.join(tmpDir, 'myfolder'))).toBe(true);
+  });
 });
 
 // ── rmdir ──────────────────────────────────────────────────────────────────
@@ -994,5 +1043,35 @@ describe('DELETE /api/browse/:folderKey/rmdir', () => {
       .send({ subpath: '', name: '../evil' });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /api/browse/:folderKey/rmdir — auth required', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-rmdir-auth-'));
+    mkdirSync(path.join(tmpDir, 'protected'));
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B55 — requires auth', async () => {
+    const res = await request(app)
+      .delete('/api/browse/media/rmdir')
+      .send({ subpath: '', name: 'protected' });
+
+    expect(res.status).toBe(401);
+    expect(existsSync(path.join(tmpDir, 'protected'))).toBe(true);
   });
 });

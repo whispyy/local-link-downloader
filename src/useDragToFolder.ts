@@ -47,26 +47,43 @@ export function useDragToFolder(
     startY: 0,
   });
 
+  const touchScrollRef = useRef<{ rafId: number | null; lastY: number }>({
+    rafId: null,
+    lastY: 0,
+  });
+
+  const stopTouchAutoScroll = useCallback(() => {
+    const s = touchScrollRef.current;
+    if (s.rafId !== null) {
+      cancelAnimationFrame(s.rafId);
+      s.rafId = null;
+    }
+  }, []);
+
   const startAutoScroll = useCallback((clientY: number) => {
-    const doScroll = () => {
-      // Use the window/document for vertical scrolling
+    const s = touchScrollRef.current;
+    s.lastY = clientY;
+
+    // Already running — just update lastY and let the loop pick it up
+    if (s.rafId !== null) return;
+
+    const tick = () => {
       const viewportHeight = window.innerHeight;
       let speed = 0;
 
-      if (clientY < SCROLL_EDGE_PX) {
-        // Near top edge — scroll up
-        speed = -SCROLL_SPEED * (1 - clientY / SCROLL_EDGE_PX);
-      } else if (clientY > viewportHeight - SCROLL_EDGE_PX) {
-        // Near bottom edge — scroll down
-        speed = SCROLL_SPEED * (1 - (viewportHeight - clientY) / SCROLL_EDGE_PX);
+      if (s.lastY < SCROLL_EDGE_PX) {
+        speed = -SCROLL_SPEED * (1 - s.lastY / SCROLL_EDGE_PX);
+      } else if (s.lastY > viewportHeight - SCROLL_EDGE_PX) {
+        speed = SCROLL_SPEED * (1 - (viewportHeight - s.lastY) / SCROLL_EDGE_PX);
       }
 
       if (speed !== 0) {
         window.scrollBy(0, speed);
       }
+      s.rafId = requestAnimationFrame(tick);
     };
 
-    doScroll();
+    tick();
   }, []);
 
   // Cleanup on unmount
@@ -75,8 +92,9 @@ export function useDragToFolder(
     return () => {
       if (s.timer) clearTimeout(s.timer);
       if (s.ghost) s.ghost.remove();
+      stopTouchAutoScroll();
     };
-  }, []);
+  }, [stopTouchAutoScroll]);
 
   // Non-passive document touchmove listener so preventDefault() can suppress
   // scroll while dragging.
@@ -253,9 +271,10 @@ export function useDragToFolder(
 
     s.dragging = false;
     s.filenames = [];
+    stopTouchAutoScroll();
     removeGhost();
     clearHighlight();
-  }, [onMove, removeGhost, clearHighlight]);
+  }, [onMove, stopTouchAutoScroll, removeGhost, clearHighlight]);
 
   // ── Mouse DnD handlers ─────────────────────────────────────────────────────
 

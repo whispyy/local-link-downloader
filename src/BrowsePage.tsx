@@ -175,14 +175,18 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}${subpathParam}`
       : fileUrl(filename);
 
-  const handleFolderChange = (key: string) => {
-    setFolderKey(key);
-    setSubpath('');
-    setPage(1);
+  const resetSelection = useCallback(() => {
     setSelectedFiles(new Set());
     lastClickedIdx.current = null;
     setPreviewFile(null);
     setTextContent(null);
+  }, []);
+
+  const handleFolderChange = (key: string) => {
+    setFolderKey(key);
+    setSubpath('');
+    setPage(1);
+    resetSelection();
   };
 
   const handleFileClick = useCallback((filename: string, fileIndex: number, e: React.MouseEvent) => {
@@ -272,11 +276,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const handleNavigateInto = useCallback((dirName: string) => {
     setSubpath(prev => prev === '' ? dirName : `${prev}/${dirName}`);
     setPage(1);
-    setSelectedFiles(new Set());
-    lastClickedIdx.current = null;
-    setPreviewFile(null);
-    setTextContent(null);
-  }, []);
+    resetSelection();
+  }, [resetSelection]);
 
   const handleBreadcrumbClick = useCallback((index: number) => {
     if (index === -1) {
@@ -286,11 +287,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setSubpath(segments.slice(0, index + 1).join('/'));
     }
     setPage(1);
-    setSelectedFiles(new Set());
-    lastClickedIdx.current = null;
-    setPreviewFile(null);
-    setTextContent(null);
-  }, [subpath]);
+    resetSelection();
+  }, [subpath, resetSelection]);
 
   const handleCreateFolder = useCallback(async () => {
     const trimmed = newFolderName.trim();

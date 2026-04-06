@@ -983,22 +983,35 @@ export function buildApp() {
     }
   });
 
-  // ── POST /api/browse/:folderKey/mkdir ──────────────────────────────────────
-  app.post('/api/browse/:folderKey/mkdir', authMiddleware, async (req, res) => {
-    const { folderKey } = req.params;
-    const { name, subpath: rawSubpath } = req.body;
-
+  // ── Shared validation for dir endpoints (mkdir, rename-dir, rmdir) ────────
+  function validateDirRequest(
+    folderKey: string,
+    rawSubpath: unknown,
+    res: import('express').Response,
+  ): { subpath: string; folderPath: string } | null {
     if (!folderMapping.has(folderKey)) {
       res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
+      return null;
     }
 
     const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
     const subpathError = validateSubpath(subpath);
     if (subpathError) {
       res.status(400).json({ error: subpathError });
-      return;
+      return null;
     }
+
+    return { subpath, folderPath: folderMapping.get(folderKey)! };
+  }
+
+  // ── POST /api/browse/:folderKey/mkdir ──────────────────────────────────────
+  app.post('/api/browse/:folderKey/mkdir', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const { name, subpath: rawSubpath } = req.body;
+
+    const validated = validateDirRequest(folderKey, rawSubpath, res);
+    if (!validated) return;
+    const { subpath, folderPath } = validated;
 
     const sanitized = sanitizeFolderName(name);
     if (!sanitized) {
@@ -1013,7 +1026,6 @@ export function buildApp() {
       return;
     }
 
-    const folderPath = folderMapping.get(folderKey)!;
     const newSubpath = subpath === '' ? sanitized : `${subpath}/${sanitized}`;
     const { resolved: targetDir, error: resolveError } = resolveSubpath(folderPath, newSubpath);
     if (resolveError) {
@@ -1039,17 +1051,9 @@ export function buildApp() {
     const { folderKey } = req.params;
     const { subpath: rawSubpath, oldName, newName } = req.body;
 
-    if (!folderMapping.has(folderKey)) {
-      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
-    }
-
-    const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
-    const subpathError = validateSubpath(subpath);
-    if (subpathError) {
-      res.status(400).json({ error: subpathError });
-      return;
-    }
+    const validated = validateDirRequest(folderKey, rawSubpath, res);
+    if (!validated) return;
+    const { subpath, folderPath } = validated;
 
     if (!oldName || typeof oldName !== 'string' || isUnsafeFilename(oldName)) {
       res.status(400).json({ error: 'Invalid old folder name' });
@@ -1062,7 +1066,6 @@ export function buildApp() {
       return;
     }
 
-    const folderPath = folderMapping.get(folderKey)!;
     const oldSubpath = subpath === '' ? oldName : `${subpath}/${oldName}`;
     const newSubpath = subpath === '' ? sanitized : `${subpath}/${sanitized}`;
     const { resolved: oldDir, error: oldErr } = resolveSubpath(folderPath, oldSubpath);
@@ -1081,9 +1084,12 @@ export function buildApp() {
       return;
     }
 
-    if (existsSync(newDir)) {
+    try {
+      await stat(newDir);
       res.status(409).json({ error: 'A folder with that name already exists' });
       return;
+    } catch {
+      // newDir does not exist — proceed
     }
 
     try {
@@ -1100,24 +1106,15 @@ export function buildApp() {
     const { folderKey } = req.params;
     const { subpath: rawSubpath, name } = req.body as { subpath?: string; name?: string };
 
-    if (!folderMapping.has(folderKey)) {
-      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
-      return;
-    }
-
-    const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
-    const subpathError = validateSubpath(subpath);
-    if (subpathError) {
-      res.status(400).json({ error: subpathError });
-      return;
-    }
+    const validated = validateDirRequest(folderKey, rawSubpath, res);
+    if (!validated) return;
+    const { subpath, folderPath } = validated;
 
     if (!name || typeof name !== 'string' || isUnsafeFilename(name)) {
       res.status(400).json({ error: 'Invalid folder name' });
       return;
     }
 
-    const folderPath = folderMapping.get(folderKey)!;
     const dirSubpath = subpath === '' ? name : `${subpath}/${name}`;
     const { resolved: dirPath, error: resolveError } = resolveSubpath(folderPath, dirSubpath);
     if (resolveError) {
