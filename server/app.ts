@@ -53,7 +53,6 @@ async function getWTClient(): Promise<any> {
   if (!_wtClient) {
     // Dynamic import — webtorrent is ESM-only (top-level await).
     // Use Function to prevent ts-node/CJS from converting import() to require().
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const dynamicImport = new Function('mod', 'return import(mod)') as (mod: string) => Promise<{ default: new (opts: Record<string, unknown>) => unknown }>;
     const { default: WTC } = await dynamicImport('webtorrent');
     // utp: false disables the utp-native addon (a compiled binary that segfaults

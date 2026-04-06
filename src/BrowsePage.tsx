@@ -84,7 +84,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [limit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastClickedIdx = useRef<number | null>(null);
+  const [previewFile, setPreviewFile] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textLoading, setTextLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -172,34 +174,46 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     setFolderKey(key);
     setSubpath('');
     setPage(1);
-    setSelectedFile(null);
+    setSelectedFiles(new Set());
+    lastClickedIdx.current = null;
+    setPreviewFile(null);
     setTextContent(null);
   };
 
-  const handleSelectFile = useCallback(async (filename: string) => {
-    setSelectedFile(filename);
+  const handleFileClick = useCallback((filename: string, fileIndex: number, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedIdx.current !== null) {
+      // Shift+click: select range
+      const start = Math.min(lastClickedIdx.current, fileIndex);
+      const end = Math.max(lastClickedIdx.current, fileIndex);
+      const rangeNames = files.slice(start, end + 1).map(f => f.name);
+      setSelectedFiles(new Set(rangeNames));
+      // Don't update lastClickedIdx on shift-click (anchor stays)
+    } else {
+      // Normal click: single select
+      setSelectedFiles(new Set([filename]));
+      lastClickedIdx.current = fileIndex;
+    }
+
+    // Update media preview
+    setPreviewFile(filename);
     setTextContent(null);
     const type = getMediaType(filename);
     if (type === 'text') {
       setTextLoading(true);
-      try {
-        const res = await fetch(
-          `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
-        );
-        if (res.ok) {
-          const text = await res.text();
-          // Cap preview at 500KB to avoid freezing the browser
+      fetch(
+        `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
+      )
+        .then(res => {
+          if (res.ok) return res.text();
+          throw new Error();
+        })
+        .then(text => {
           setTextContent(text.length > 512_000 ? text.slice(0, 512_000) + '\n\n… (truncated)' : text);
-        } else {
-          setTextContent('Failed to load file content.');
-        }
-      } catch {
-        setTextContent('Failed to load file content.');
-      } finally {
-        setTextLoading(false);
-      }
+        })
+        .catch(() => setTextContent('Failed to load file content.'))
+        .finally(() => setTextLoading(false));
     }
-  }, [folderKey, subpathParam, token]);
+  }, [files, folderKey, subpathParam, token]);
 
   const handleDelete = useCallback(async (filename: string) => {
     setDeleting(true);
@@ -214,10 +228,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         setError(data.error || 'Delete failed');
         return;
       }
-      if (selectedFile === filename) {
-        setSelectedFile(null);
-        setTextContent(null);
-      }
+      setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
+      if (previewFile === filename) { setPreviewFile(null); setTextContent(null); }
       setConfirmDelete(null);
       fetchFiles();
     } catch {
@@ -225,7 +237,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setDeleting(false);
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
 
   const handleMove = useCallback(async (filename: string, targetFolder: string) => {
     setMoving(true);
@@ -241,10 +253,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         setError(data.error || 'Move failed');
         return;
       }
-      if (selectedFile === filename) {
-        setSelectedFile(null);
-        setTextContent(null);
-      }
+      setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
+      if (previewFile === filename) { setPreviewFile(null); setTextContent(null); }
       setMoveTarget(null);
       fetchFiles();
     } catch {
@@ -252,12 +262,14 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setMoving(false);
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
 
   const handleNavigateInto = useCallback((dirName: string) => {
     setSubpath(prev => prev === '' ? dirName : `${prev}/${dirName}`);
     setPage(1);
-    setSelectedFile(null);
+    setSelectedFiles(new Set());
+    lastClickedIdx.current = null;
+    setPreviewFile(null);
     setTextContent(null);
   }, []);
 
@@ -269,7 +281,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setSubpath(segments.slice(0, index + 1).join('/'));
     }
     setPage(1);
-    setSelectedFile(null);
+    setSelectedFiles(new Set());
+    lastClickedIdx.current = null;
+    setPreviewFile(null);
     setTextContent(null);
   }, [subpath]);
 
@@ -301,40 +315,51 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
 
-  const handleMoveToSubpath = useCallback(async (filename: string, targetDirName: string) => {
+  const handleMoveToSubpath = useCallback(async (filenames: string[], targetDirName: string) => {
     let targetSubpath: string;
     if (targetDirName === '..') {
-      // Move to parent
       const segments = subpath.split('/');
       targetSubpath = segments.slice(0, -1).join('/');
     } else {
       targetSubpath = subpath === '' ? targetDirName : `${subpath}/${targetDirName}`;
     }
     try {
-      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/move-to-subpath`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceSubpath: subpath, targetSubpath }),
-      });
-      if (res.status === 401) { onUnauthorized(); return; }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Move failed' }));
-        setError(data.error || 'Move failed');
-        return;
+      const results = await Promise.all(
+        filenames.map(filename =>
+          fetch(`/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/move-to-subpath`, {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceSubpath: subpath, targetSubpath }),
+          }),
+        ),
+      );
+      for (const res of results) {
+        if (res.status === 401) { onUnauthorized(); return; }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: 'Move failed' }));
+          setError(data.error || 'Move failed');
+        }
       }
-      if (selectedFile === filename) {
-        setSelectedFile(null);
+      // Clear moved files from selection
+      setSelectedFiles(prev => {
+        const next = new Set(prev);
+        filenames.forEach(f => next.delete(f));
+        return next;
+      });
+      if (previewFile && filenames.includes(previewFile)) {
+        setPreviewFile(null);
         setTextContent(null);
       }
       fetchFiles();
     } catch {
       setError('Failed to move file');
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, selectedFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
 
-  const drag = useDragToFolder(handleMoveToSubpath);
+  const getSelectedFiles = useCallback(() => Array.from(selectedFiles), [selectedFiles]);
+  const drag = useDragToFolder(handleMoveToSubpath, getSelectedFiles);
 
-  const mediaType = selectedFile ? getMediaType(selectedFile) : null;
+  const mediaType = previewFile ? getMediaType(previewFile) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
@@ -498,11 +523,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         )}
 
         {/* Media viewer */}
-        {selectedFile && (
+        {previewFile && (
           <div className="mb-4 bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-th-bg-alt border-b border-th-border-light">
-              <span className="text-sm font-medium text-th-text-sub truncate">{selectedFile}</span>
-              <button onClick={() => { setSelectedFile(null); setTextContent(null); }} className="text-th-text-faint hover:text-th-text-sub transition">
+              <span className="text-sm font-medium text-th-text-sub break-all">{previewFile}</span>
+              <button onClick={() => { setPreviewFile(null); setTextContent(null); }} className="text-th-text-faint hover:text-th-text-sub transition">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -514,12 +539,12 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   <pre className="p-4 text-sm text-th-text-sub font-mono whitespace-pre-wrap break-all">{textContent}</pre>
                 )}
               </div>
-            ) : (
+            ) : mediaType ? (
               <div className="flex items-center justify-center p-4 bg-th-bg-media min-h-[200px]">
                 {mediaType === 'video' && (
                   <video
-                    key={selectedFile}
-                    src={videoSrc(selectedFile)}
+                    key={previewFile}
+                    src={videoSrc(previewFile)}
                     controls
                     playsInline
                     className="max-w-full max-h-[70vh]"
@@ -527,22 +552,22 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 )}
                 {mediaType === 'audio' && (
                   <audio
-                    key={selectedFile}
-                    src={fileUrl(selectedFile)}
+                    key={previewFile}
+                    src={fileUrl(previewFile)}
                     controls
                     className="w-full max-w-lg"
                   />
                 )}
                 {mediaType === 'image' && (
                   <img
-                    key={selectedFile}
-                    src={fileUrl(selectedFile)}
-                    alt={selectedFile}
+                    key={previewFile}
+                    src={fileUrl(previewFile)}
+                    alt={previewFile}
                     className="max-w-full max-h-[70vh] object-contain"
                   />
                 )}
               </div>
-            )}
+            ) : null}
           </div>
         )}
 
@@ -600,13 +625,12 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     <td className="px-4 py-3"></td>
                   </tr>
                 ))}
-                {files.map((file) => {
-                  const type = getMediaType(file.name);
+                {files.map((file, fileIndex) => {
                   return (
                     <tr
                       key={file.name}
-                      className={`hover:bg-th-bg-alt transition ${type ? 'cursor-pointer' : ''} ${selectedFile === file.name ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
-                      onClick={() => { if (type) handleSelectFile(file.name); }}
+                      className={`hover:bg-th-bg-alt transition cursor-pointer ${selectedFiles.has(file.name) ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
+                      onClick={(e) => handleFileClick(file.name, fileIndex, e)}
                       {...drag.fileRow(file.name)}
                     >
                       <td className="px-4 py-3 max-w-0 min-w-[150px]">
