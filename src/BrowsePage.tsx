@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuthHeaders } from './useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil } from 'lucide-react';
 import { formatBytes, formatDate, getMediaType } from './utils';
 import NavBar from './NavBar';
 import { useDragToFolder } from './useDragToFolder';
@@ -98,6 +98,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingLoading, setCreatingLoading] = useState(false);
+  const [renamingDir, setRenamingDir] = useState<string | null>(null);
+  const [renameDirValue, setRenameDirValue] = useState('');
+  const [renameDirLoading, setRenameDirLoading] = useState(false);
+  const [confirmDeleteDir, setConfirmDeleteDir] = useState<string | null>(null);
+  const [deletingDir, setDeletingDir] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
@@ -312,6 +317,55 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setCreatingLoading(false);
     }
   }, [folderKey, newFolderName, subpath, authHeaders, onUnauthorized, fetchFiles]);
+
+  const handleRenameDir = useCallback(async (oldName: string) => {
+    const trimmed = renameDirValue.trim();
+    if (!trimmed || trimmed === oldName) { setRenamingDir(null); return; }
+    setRenameDirLoading(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rename-dir`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subpath, oldName, newName: trimmed }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Rename failed' }));
+        setError(data.error || 'Rename failed');
+        return;
+      }
+      setRenamingDir(null);
+      setRenameDirValue('');
+      fetchFiles();
+    } catch {
+      setError('Failed to rename folder');
+    } finally {
+      setRenameDirLoading(false);
+    }
+  }, [folderKey, subpath, renameDirValue, authHeaders, onUnauthorized, fetchFiles]);
+
+  const handleDeleteDir = useCallback(async (dirName: string) => {
+    setDeletingDir(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rmdir`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subpath, name: dirName }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Delete failed' }));
+        setError(data.error || 'Delete failed');
+        return;
+      }
+      setConfirmDeleteDir(null);
+      fetchFiles();
+    } catch {
+      setError('Failed to delete folder');
+    } finally {
+      setDeletingDir(false);
+    }
+  }, [folderKey, subpath, authHeaders, onUnauthorized, fetchFiles]);
 
   const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
 
@@ -611,18 +665,87 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   <tr
                     key={`dir-${dirName}`}
                     className="hover:bg-th-bg-alt transition cursor-pointer"
-                    onClick={() => handleNavigateInto(dirName)}
+                    onClick={() => { if (!renamingDir && !confirmDeleteDir) handleNavigateInto(dirName); }}
                     {...drag.dirRow(dirName)}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="shrink-0"><Folder className="w-4 h-4 text-amber-500" /></span>
-                        <span className="font-medium text-th-text-sub">{dirName}</span>
+                        {renamingDir === dirName ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={renameDirValue}
+                            onChange={(e) => setRenameDirValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameDir(dirName);
+                              if (e.key === 'Escape') { setRenamingDir(null); setRenameDirValue(''); }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={renameDirLoading}
+                            className="px-2 py-0.5 text-sm border border-th-border rounded bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring min-w-0 flex-1"
+                          />
+                        ) : (
+                          <span className="font-medium text-th-text-sub">{dirName}</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
                     <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
-                    <td className="px-4 py-3"></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        {confirmDeleteDir === dirName ? (
+                          <>
+                            <button
+                              onClick={() => handleDeleteDir(dirName)}
+                              disabled={deletingDir}
+                              className="px-2 py-1 rounded text-xs font-medium bg-red-500/15 text-red-600 hover:bg-red-500/25 transition disabled:opacity-50"
+                            >
+                              {deletingDir ? 'Deleting…' : 'Delete'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteDir(null)}
+                              className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : renamingDir === dirName ? (
+                          <>
+                            <button
+                              onClick={() => handleRenameDir(dirName)}
+                              disabled={renameDirLoading || !renameDirValue.trim()}
+                              className="px-2 py-1 rounded text-xs font-medium bg-purple-500/15 text-purple-600 hover:bg-purple-500/25 transition disabled:opacity-50"
+                            >
+                              {renameDirLoading ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => { setRenamingDir(null); setRenameDirValue(''); }}
+                              className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => { setRenamingDir(dirName); setRenameDirValue(dirName); setConfirmDeleteDir(null); }}
+                              className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition"
+                              title="Rename folder"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => { setConfirmDeleteDir(dirName); setRenamingDir(null); }}
+                              className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
+                              title="Delete folder"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {files.map((file, fileIndex) => {
@@ -642,7 +765,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                       <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{formatBytes(file.size)}</td>
                       <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{formatDate(file.modifiedAt)}</td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           {confirmDelete === file.name ? (
                             <>
                               <button

@@ -14,7 +14,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
-import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir } from 'fs/promises';
+import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -1031,6 +1031,117 @@ export function buildApp() {
       }
       log('ERROR', 'mkdir failed', { folderKey, name: sanitized, error: String(err) });
       res.status(500).json({ error: 'Failed to create folder' });
+    }
+  });
+
+  // ── POST /api/browse/:folderKey/rename-dir ────────────────────────────────
+  app.post('/api/browse/:folderKey/rename-dir', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const { subpath: rawSubpath, oldName, newName } = req.body;
+
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    if (!oldName || typeof oldName !== 'string' || isUnsafeFilename(oldName)) {
+      res.status(400).json({ error: 'Invalid old folder name' });
+      return;
+    }
+
+    const sanitized = sanitizeFolderName(newName);
+    if (!sanitized) {
+      res.status(400).json({ error: 'Invalid new folder name' });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    const oldSubpath = subpath === '' ? oldName : `${subpath}/${oldName}`;
+    const newSubpath = subpath === '' ? sanitized : `${subpath}/${sanitized}`;
+    const { resolved: oldDir, error: oldErr } = resolveSubpath(folderPath, oldSubpath);
+    if (oldErr) { res.status(400).json({ error: oldErr }); return; }
+    const { resolved: newDir, error: newErr } = resolveSubpath(folderPath, newSubpath);
+    if (newErr) { res.status(400).json({ error: newErr }); return; }
+
+    try {
+      const s = await stat(oldDir);
+      if (!s.isDirectory()) {
+        res.status(400).json({ error: 'Not a directory' });
+        return;
+      }
+    } catch {
+      res.status(404).json({ error: 'Directory not found' });
+      return;
+    }
+
+    if (existsSync(newDir)) {
+      res.status(409).json({ error: 'A folder with that name already exists' });
+      return;
+    }
+
+    try {
+      await rename(oldDir, newDir);
+      res.json({ ok: true, name: sanitized });
+    } catch (err) {
+      log('ERROR', 'rename-dir failed', { folderKey, oldName, newName: sanitized, error: String(err) });
+      res.status(500).json({ error: 'Failed to rename folder' });
+    }
+  });
+
+  // ── DELETE /api/browse/:folderKey/rmdir ──────────────────────────────────
+  app.delete('/api/browse/:folderKey/rmdir', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const { subpath: rawSubpath, name } = req.body as { subpath?: string; name?: string };
+
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const subpath = typeof rawSubpath === 'string' ? rawSubpath : '';
+    const subpathError = validateSubpath(subpath);
+    if (subpathError) {
+      res.status(400).json({ error: subpathError });
+      return;
+    }
+
+    if (!name || typeof name !== 'string' || isUnsafeFilename(name)) {
+      res.status(400).json({ error: 'Invalid folder name' });
+      return;
+    }
+
+    const folderPath = folderMapping.get(folderKey)!;
+    const dirSubpath = subpath === '' ? name : `${subpath}/${name}`;
+    const { resolved: dirPath, error: resolveError } = resolveSubpath(folderPath, dirSubpath);
+    if (resolveError) {
+      res.status(400).json({ error: resolveError });
+      return;
+    }
+
+    try {
+      const s = await stat(dirPath);
+      if (!s.isDirectory()) {
+        res.status(400).json({ error: 'Not a directory' });
+        return;
+      }
+    } catch {
+      res.status(404).json({ error: 'Directory not found' });
+      return;
+    }
+
+    try {
+      await rm(dirPath, { recursive: true });
+      res.json({ ok: true });
+    } catch (err) {
+      log('ERROR', 'rmdir failed', { folderKey, name, error: String(err) });
+      res.status(500).json({ error: 'Failed to delete folder' });
     }
   });
 
