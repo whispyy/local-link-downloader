@@ -50,6 +50,13 @@
  *   B44 move-to-subpath returns 409 if file exists at target
  *   B45 move-to-subpath validates subpaths (traversal, depth)
  *   B46 move-to-subpath requires auth
+ *   B47 rename-dir renames a subfolder
+ *   B48 rename-dir returns 409 if target name exists
+ *   B49 rename-dir returns 404 for non-existent dir
+ *   B50 rename-dir rejects invalid names
+ *   B51 rmdir deletes a subfolder and its contents
+ *   B52 rmdir returns 404 for non-existent dir
+ *   B53 rmdir rejects invalid names
  */
 
 import request from 'supertest';
@@ -865,5 +872,127 @@ describe('POST /api/browse/:folderKey/:filename/move-to-subpath — auth require
 
     expect(res.status).toBe(401);
     expect(existsSync(path.join(tmpDir, 'secret.txt'))).toBe(true);
+  });
+});
+
+// ── rename-dir ─────────────────────────────────────────────────────────────
+
+describe('POST /api/browse/:folderKey/rename-dir', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-renamedir-'));
+    mkdirSync(path.join(tmpDir, 'myfolder'));
+    writeFileSync(path.join(tmpDir, 'myfolder', 'file.txt'), 'content');
+    mkdirSync(path.join(tmpDir, 'existing'));
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B47 — renames a subfolder', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'myfolder', newName: 'renamed' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.name).toBe('renamed');
+    expect(existsSync(path.join(tmpDir, 'myfolder'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'renamed'))).toBe(true);
+    // Contents preserved
+    expect(readFileSync(path.join(tmpDir, 'renamed', 'file.txt'), 'utf-8')).toBe('content');
+  });
+
+  it('B48 — returns 409 if target name already exists', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'myfolder', newName: 'existing' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+    // Original untouched
+    expect(existsSync(path.join(tmpDir, 'myfolder'))).toBe(true);
+  });
+
+  it('B49 — returns 404 for non-existent directory', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'nope', newName: 'whatever' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('B50 — rejects invalid names', async () => {
+    const res1 = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'myfolder', newName: '../evil' });
+    expect(res1.status).toBe(400);
+
+    const res2 = await request(app)
+      .post('/api/browse/media/rename-dir')
+      .send({ subpath: '', oldName: 'myfolder', newName: 'foo/bar' });
+    expect(res2.status).toBe(400);
+  });
+});
+
+// ── rmdir ──────────────────────────────────────────────────────────────────
+
+describe('DELETE /api/browse/:folderKey/rmdir', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-rmdir-'));
+    mkdirSync(path.join(tmpDir, 'tobedeleted'));
+    writeFileSync(path.join(tmpDir, 'tobedeleted', 'inner.txt'), 'inner-content');
+    mkdirSync(path.join(tmpDir, 'tobedeleted', 'nested'));
+    writeFileSync(path.join(tmpDir, 'tobedeleted', 'nested', 'deep.txt'), 'deep');
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B51 — deletes a subfolder and its contents', async () => {
+    const res = await request(app)
+      .delete('/api/browse/media/rmdir')
+      .send({ subpath: '', name: 'tobedeleted' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'tobedeleted'))).toBe(false);
+  });
+
+  it('B52 — returns 404 for non-existent directory', async () => {
+    const res = await request(app)
+      .delete('/api/browse/media/rmdir')
+      .send({ subpath: '', name: 'nope' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('B53 — rejects invalid names', async () => {
+    const res = await request(app)
+      .delete('/api/browse/media/rmdir')
+      .send({ subpath: '', name: '../evil' });
+
+    expect(res.status).toBe(400);
   });
 });
