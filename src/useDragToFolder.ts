@@ -5,7 +5,7 @@ import { useRef, useCallback, useEffect } from 'react';
  * to move files into subfolder rows in the browse table.
  *
  * Usage:
- *   const drag = useDragToFolder(onMoveFile);
+ *   const drag = useDragToFolder(onMoveFile, getSelectedFiles);
  *   <tr {...drag.fileRow(filename)}>        — draggable file row
  *   <tr {...drag.dirRow(dirName)}>          — drop target directory row
  *   <tr {...drag.backRow()}>                — drop target ".." row
@@ -15,6 +15,8 @@ const LONG_PRESS_MS = 400;
 const DRAG_DATA_TYPE = 'text/x-browse-filename';
 const DROP_TARGET_ATTR = 'data-drop-target';
 const DROP_TARGET_CLASS = 'drop-target-highlight';
+const SCROLL_EDGE_PX = 60; // distance from edge to trigger auto-scroll
+const SCROLL_SPEED = 12;   // pixels per frame
 
 export interface DragToFolderActions {
   fileRow: (filename: string) => Record<string, unknown>;
@@ -23,13 +25,14 @@ export interface DragToFolderActions {
 }
 
 export function useDragToFolder(
-  onMove: (filename: string, targetDirName: string | '..') => void,
+  onMove: (filenames: string[], targetDirName: string | '..') => void,
+  getSelectedFiles: () => string[],
 ): DragToFolderActions {
   // ── Touch state ────────────────────────────────────────────────────────────
   const touchState = useRef<{
     timer: ReturnType<typeof setTimeout> | null;
     dragging: boolean;
-    filename: string;
+    filenames: string[];
     ghost: HTMLDivElement | null;
     currentTarget: HTMLElement | null;
     startX: number;
@@ -37,12 +40,34 @@ export function useDragToFolder(
   }>({
     timer: null,
     dragging: false,
-    filename: '',
+    filenames: [],
     ghost: null,
     currentTarget: null,
     startX: 0,
     startY: 0,
   });
+
+  const startAutoScroll = useCallback((clientY: number) => {
+    const doScroll = () => {
+      // Use the window/document for vertical scrolling
+      const viewportHeight = window.innerHeight;
+      let speed = 0;
+
+      if (clientY < SCROLL_EDGE_PX) {
+        // Near top edge — scroll up
+        speed = -SCROLL_SPEED * (1 - clientY / SCROLL_EDGE_PX);
+      } else if (clientY > viewportHeight - SCROLL_EDGE_PX) {
+        // Near bottom edge — scroll down
+        speed = SCROLL_SPEED * (1 - (viewportHeight - clientY) / SCROLL_EDGE_PX);
+      }
+
+      if (speed !== 0) {
+        window.scrollBy(0, speed);
+      }
+    };
+
+    doScroll();
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -54,15 +79,64 @@ export function useDragToFolder(
   }, []);
 
   // Non-passive document touchmove listener so preventDefault() can suppress
-  // scroll while dragging. React synthetic events on individual rows cannot
-  // reliably prevent scroll because the browser commits to a scroll gesture
-  // before the long-press timer fires.
+  // scroll while dragging.
   useEffect(() => {
     const handler = (e: TouchEvent) => {
       if (touchState.current.dragging) e.preventDefault();
     };
     document.addEventListener('touchmove', handler, { passive: false });
     return () => document.removeEventListener('touchmove', handler);
+  }, []);
+
+  // ── Mouse auto-scroll (fires continuously during dragover on document) ────
+  useEffect(() => {
+    let rafId: number | null = null;
+    let lastY = 0;
+    let active = false;
+
+    const onDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes(DRAG_DATA_TYPE)) return;
+      lastY = e.clientY;
+      if (!active) {
+        active = true;
+        tick();
+      }
+    };
+
+    const onDragEnd = () => {
+      active = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
+    const tick = () => {
+      if (!active) return;
+      const viewportHeight = window.innerHeight;
+      let speed = 0;
+
+      if (lastY < SCROLL_EDGE_PX) {
+        speed = -SCROLL_SPEED * (1 - lastY / SCROLL_EDGE_PX);
+      } else if (lastY > viewportHeight - SCROLL_EDGE_PX) {
+        speed = SCROLL_SPEED * (1 - (viewportHeight - lastY) / SCROLL_EDGE_PX);
+      }
+
+      if (speed !== 0) {
+        window.scrollBy(0, speed);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragend', onDragEnd);
+    document.addEventListener('drop', onDragEnd);
+    return () => {
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragend', onDragEnd);
+      document.removeEventListener('drop', onDragEnd);
+      onDragEnd();
+    };
   }, []);
 
   // ── Touch helpers ──────────────────────────────────────────────────────────
@@ -102,7 +176,10 @@ export function useDragToFolder(
     const s = touchState.current;
     s.startX = touch.clientX;
     s.startY = touch.clientY;
-    s.filename = filename;
+
+    // Determine which files to drag
+    const selected = getSelectedFiles();
+    s.filenames = selected.includes(filename) ? selected : [filename];
 
     // Start long-press timer
     s.timer = setTimeout(() => {
@@ -111,7 +188,8 @@ export function useDragToFolder(
 
       // Create ghost element
       const ghost = document.createElement('div');
-      ghost.textContent = filename;
+      const count = s.filenames.length;
+      ghost.textContent = count > 1 ? `${count} files` : filename;
       ghost.className = 'drag-ghost';
       ghost.style.cssText =
         'position:fixed;z-index:9999;pointer-events:none;' +
@@ -123,7 +201,7 @@ export function useDragToFolder(
       document.body.appendChild(ghost);
       s.ghost = ghost;
     }, LONG_PRESS_MS);
-  }, []);
+  }, [getSelectedFiles]);
 
   const onTouchMove = useCallback((e: React.TouchEvent) => {
     const s = touchState.current;
@@ -148,6 +226,9 @@ export function useDragToFolder(
       s.ghost.style.top = `${touch.clientY - 20}px`;
     }
 
+    // Auto-scroll near edges
+    startAutoScroll(touch.clientY);
+
     // Highlight drop target
     const target = findDropTarget(touch.clientX, touch.clientY);
     if (target !== s.currentTarget) {
@@ -157,7 +238,7 @@ export function useDragToFolder(
         s.currentTarget = target;
       }
     }
-  }, [findDropTarget, clearHighlight]);
+  }, [findDropTarget, clearHighlight, startAutoScroll]);
 
   const onTouchEnd = useCallback(() => {
     const s = touchState.current;
@@ -166,12 +247,12 @@ export function useDragToFolder(
     if (s.dragging && s.currentTarget) {
       const dirName = s.currentTarget.getAttribute(DROP_TARGET_ATTR) || '';
       if (dirName) {
-        onMove(s.filename, dirName);
+        onMove(s.filenames, dirName);
       }
     }
 
     s.dragging = false;
-    s.filename = '';
+    s.filenames = [];
     removeGhost();
     clearHighlight();
   }, [onMove, removeGhost, clearHighlight]);
@@ -179,12 +260,29 @@ export function useDragToFolder(
   // ── Mouse DnD handlers ─────────────────────────────────────────────────────
 
   const onDragStart = useCallback((filename: string, e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_DATA_TYPE, filename);
+    // Determine which files to drag
+    const selected = getSelectedFiles();
+    const filenames = selected.includes(filename) ? selected : [filename];
+
+    e.dataTransfer.setData(DRAG_DATA_TYPE, JSON.stringify(filenames));
     e.dataTransfer.effectAllowed = 'move';
+
+    // Custom drag image showing count
+    if (filenames.length > 1) {
+      const badge = document.createElement('div');
+      badge.textContent = `${filenames.length} files`;
+      badge.style.cssText =
+        'position:absolute;top:-9999px;padding:6px 12px;border-radius:8px;font-size:13px;' +
+        'background:rgba(147,51,234,0.9);color:white;white-space:nowrap;';
+      document.body.appendChild(badge);
+      e.dataTransfer.setDragImage(badge, 0, 0);
+      requestAnimationFrame(() => badge.remove());
+    }
+
     // Dim the source row after a tick so the browser captures the snapshot first
     const row = e.currentTarget as HTMLElement;
     requestAnimationFrame(() => row.classList.add('opacity-50'));
-  }, []);
+  }, [getSelectedFiles]);
 
   const onDragEnd = useCallback((e: React.DragEvent) => {
     (e.currentTarget as HTMLElement).classList.remove('opacity-50');
@@ -215,9 +313,17 @@ export function useDragToFolder(
   const onDrop = useCallback((dirName: string, e: React.DragEvent) => {
     e.preventDefault();
     (e.currentTarget as HTMLElement).classList.remove(DROP_TARGET_CLASS);
-    const filename = e.dataTransfer.getData(DRAG_DATA_TYPE);
-    if (filename) {
-      onMove(filename, dirName);
+    const raw = e.dataTransfer.getData(DRAG_DATA_TYPE);
+    if (raw) {
+      try {
+        const filenames: string[] = JSON.parse(raw);
+        if (filenames.length > 0) {
+          onMove(filenames, dirName);
+        }
+      } catch {
+        // Fallback for single filename (shouldn't happen, but safe)
+        onMove([raw], dirName);
+      }
     }
   }, [onMove]);
 
