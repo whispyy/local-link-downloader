@@ -9,7 +9,7 @@
 import express from 'express';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
-import { createReadStream, statSync } from 'fs';
+import { createReadStream, statSync, existsSync } from 'fs';
 import { unlink } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import os from 'os';
@@ -17,12 +17,25 @@ import path from 'path';
 
 const execFileAsync = promisify(execFile);
 
+const VIDEO_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.mov': 'video/quicktime',
+};
+
+function videoContentType(filePath: string): string {
+  return VIDEO_MIME[path.extname(filePath).toLowerCase()] || 'video/mp4';
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type LogFn = (level: 'INFO' | 'ERROR' | 'WARN', message: string, meta?: Record<string, unknown>) => void;
 
 interface CacheEntry {
-  tmpPath: string;
+  /** null = file is already compatible, serve original directly */
+  tmpPath: string | null;
   ready: boolean;
   promise: Promise<void>;
   lastAccess: number;
@@ -44,18 +57,32 @@ interface ProbeResult {
 }
 
 export async function probeFile(fullPath: string): Promise<ProbeResult> {
-  const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'quiet',
-    '-print_format', 'json',
-    '-show_streams',
-    fullPath,
-  ]);
-  const data = JSON.parse(stdout);
+  let stdout: string;
+  try {
+    const result = await execFileAsync('ffprobe', [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_streams',
+      fullPath,
+    ], { timeout: 15_000 });
+    stdout = result.stdout;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`ffprobe failed: ${msg}`);
+  }
+
+  let data: { streams?: Array<{ codec_type?: string; codec_name?: string }> };
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    throw new Error('ffprobe returned invalid JSON');
+  }
+
   let videoCodec: string | null = null;
   let audioCodec: string | null = null;
   for (const stream of data.streams || []) {
-    if (stream.codec_type === 'video' && !videoCodec) videoCodec = stream.codec_name;
-    if (stream.codec_type === 'audio' && !audioCodec) audioCodec = stream.codec_name;
+    if (stream.codec_type === 'video' && !videoCodec) videoCodec = stream.codec_name ?? null;
+    if (stream.codec_type === 'audio' && !audioCodec) audioCodec = stream.codec_name ?? null;
   }
   return {
     videoCodec,
@@ -80,7 +107,8 @@ function buildFfmpegArgs(inputPath: string, outputPath: string, probe: ProbeResu
           // Baseline profile = widest Safari / iOS / older-device support
           '-profile:v', 'baseline', '-level', '3.1',
           '-pix_fmt', 'yuv420p',
-          '-preset', 'fast', '-crf', '23',
+          '-preset', 'veryfast', '-crf', '23',
+          '-threads', '2',
         ]),
     // Audio
     ...(probe.canCopyAudio
@@ -92,9 +120,20 @@ function buildFfmpegArgs(inputPath: string, outputPath: string, probe: ProbeResu
   ];
 }
 
+/** Max transcode time: 10 minutes. Prevents hanging on corrupted files. */
+const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000;
+
 function runFfmpeg(args: string[], log: LogFn): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    // killed flag prevents double-rejection: timer rejects first, then close fires but is suppressed
+    let killed = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      proc.kill('SIGKILL');
+      reject(new Error('ffmpeg timed out (exceeded 10 minutes)'));
+    }, FFMPEG_TIMEOUT_MS);
 
     // Drain stderr so the pipe buffer never fills (which would deadlock ffmpeg)
     let stderrBuf = '';
@@ -107,8 +146,13 @@ function runFfmpeg(args: string[], log: LogFn): Promise<void> {
     // Drain stdout (should be empty when writing to file, but be safe)
     proc.stdout!.resume();
 
-    proc.on('error', (err) => reject(err));
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (killed) return; // already rejected by timeout
       if (code === 0) {
         resolve();
       } else {
@@ -133,7 +177,7 @@ export function startCacheCleanup(log: LogFn) {
     for (const [key, entry] of cache) {
       if (entry.ready && now - entry.lastAccess > CACHE_TTL_MS) {
         cache.delete(key);
-        unlink(entry.tmpPath).catch(() => {});
+        if (entry.tmpPath) unlink(entry.tmpPath).catch(() => {});
         log('INFO', 'Cleaned up transcode cache', { key });
       }
     }
@@ -150,6 +194,10 @@ export function serveFileWithRanges(
   res: express.Response,
   contentType = 'video/mp4',
 ) {
+  if (!existsSync(filePath)) {
+    if (!res.headersSent) res.status(404).json({ error: 'File not found' });
+    return;
+  }
   const fileStat = statSync(filePath);
   res.setHeader('Content-Type', contentType);
   res.setHeader('Content-Disposition', 'inline');
@@ -191,12 +239,23 @@ export async function handleStreamRequest(
 
   if (!entry) {
     const probe = await probeFile(fullPath);
-    const mode = probe.canCopyVideo && probe.canCopyAudio ? 'remux' : 'transcode';
+
+    // If file is already fully compatible, cache a sentinel and serve original directly
+    if (probe.canCopyVideo && probe.canCopyAudio) {
+      log('INFO', 'Serving original (already compatible)', {
+        filename,
+        videoCodec: probe.videoCodec,
+        audioCodec: probe.audioCodec,
+      });
+      cache.set(cacheKey, { tmpPath: null, ready: true, promise: Promise.resolve(), lastAccess: Date.now() });
+      serveFileWithRanges(fullPath, req, res, videoContentType(fullPath));
+      return;
+    }
+
     log('INFO', 'Transcoding file', {
       filename,
       videoCodec: probe.videoCodec,
       audioCodec: probe.audioCodec,
-      mode,
     });
 
     const tmpPath = path.join(os.tmpdir(), `lld-${randomUUID()}.mp4`);
@@ -216,6 +275,12 @@ export async function handleStreamRequest(
   }
 
   entry.lastAccess = Date.now();
+
+  // Sentinel: file is already compatible, serve original directly
+  if (entry.tmpPath === null) {
+    serveFileWithRanges(fullPath, req, res, videoContentType(fullPath));
+    return;
+  }
 
   // Wait for transcoding to finish
   await entry.promise;

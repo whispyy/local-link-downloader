@@ -87,6 +87,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const lastClickedIdx = useRef<number | null>(null);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState(false);
+  const [videoRetryKey, setVideoRetryKey] = useState(0);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textLoading, setTextLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -179,6 +181,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     setSelectedFiles(new Set());
     lastClickedIdx.current = null;
     setPreviewFile(null);
+    setVideoError(false);
+    setVideoRetryKey(0);
     setTextContent(null);
   }, []);
 
@@ -205,6 +209,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
     // Update media preview
     setPreviewFile(filename);
+    setVideoError(false);
+    setVideoRetryKey(0);
     setTextContent(null);
     const type = getMediaType(filename);
     if (type === 'text') {
@@ -238,7 +244,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         return;
       }
       setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
-      if (previewFile === filename) { setPreviewFile(null); setTextContent(null); }
+      if (previewFile === filename) { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }
       setConfirmDelete(null);
       fetchFiles();
     } catch {
@@ -263,7 +269,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         return;
       }
       setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
-      if (previewFile === filename) { setPreviewFile(null); setTextContent(null); }
+      if (previewFile === filename) { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }
       setMoveTarget(null);
       fetchFiles();
     } catch {
@@ -400,6 +406,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       });
       if (previewFile && filenames.includes(previewFile)) {
         setPreviewFile(null);
+        setVideoError(false);
+        setVideoRetryKey(0);
         setTextContent(null);
       }
       fetchFiles();
@@ -579,7 +587,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
           <div className="mb-4 bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-th-bg-alt border-b border-th-border-light">
               <span className="text-sm font-medium text-th-text-sub break-all">{previewFile}</span>
-              <button onClick={() => { setPreviewFile(null); setTextContent(null); }} className="text-th-text-faint hover:text-th-text-sub transition">
+              <button onClick={() => { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }} className="text-th-text-faint hover:text-th-text-sub transition">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -594,13 +602,26 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             ) : mediaType ? (
               <div className="flex items-center justify-center p-4 bg-th-bg-media min-h-[200px]">
                 {mediaType === 'video' && (
-                  <video
-                    key={previewFile}
-                    src={videoSrc(previewFile)}
-                    controls
-                    playsInline
-                    className="max-w-full max-h-[70vh]"
-                  />
+                  videoError ? (
+                    <div className="text-red-500 text-sm text-center p-4">
+                      <p>Failed to load video{transcoding ? ' (transcoding may have failed)' : ''}.</p>
+                      <button
+                        className="mt-2 text-th-accent hover:underline"
+                        onClick={() => { setVideoError(false); setVideoRetryKey(k => k + 1); }}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <video
+                      key={`${previewFile}-${videoRetryKey}`}
+                      src={videoSrc(previewFile)}
+                      controls
+                      playsInline
+                      className="max-w-full max-h-[70vh]"
+                      onError={() => setVideoError(true)}
+                    />
+                  )
                 )}
                 {mediaType === 'audio' && (
                   <audio
