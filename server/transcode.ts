@@ -17,18 +17,6 @@ import path from 'path';
 
 const execFileAsync = promisify(execFile);
 
-const VIDEO_MIME: Record<string, string> = {
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo',
-  '.mov': 'video/quicktime',
-};
-
-function videoContentType(filePath: string): string {
-  return VIDEO_MIME[path.extname(filePath).toLowerCase()] || 'video/mp4';
-}
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type LogFn = (level: 'INFO' | 'ERROR' | 'WARN', message: string, meta?: Record<string, unknown>) => void;
