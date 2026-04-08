@@ -240,15 +240,18 @@ export async function handleStreamRequest(
   if (!entry) {
     const probe = await probeFile(fullPath);
 
-    // If file is already fully compatible, cache a sentinel and serve original directly
-    if (probe.canCopyVideo && probe.canCopyAudio) {
-      log('INFO', 'Serving original (already compatible)', {
+    // If file is already a compatible MP4, cache a sentinel and serve original directly.
+    // We require MP4 specifically: Safari/iOS cannot play MKV, AVI, WebM, etc. even
+    // when the codecs are h264+aac. Non-MP4 files must be remuxed into an MP4 container.
+    const isAlreadyMp4 = path.extname(fullPath).toLowerCase() === '.mp4';
+    if (probe.canCopyVideo && probe.canCopyAudio && isAlreadyMp4) {
+      log('INFO', 'Serving original (already compatible MP4)', {
         filename,
         videoCodec: probe.videoCodec,
         audioCodec: probe.audioCodec,
       });
       cache.set(cacheKey, { tmpPath: null, ready: true, promise: Promise.resolve(), lastAccess: Date.now() });
-      serveFileWithRanges(fullPath, req, res, videoContentType(fullPath));
+      serveFileWithRanges(fullPath, req, res, 'video/mp4');
       return;
     }
 
@@ -276,9 +279,9 @@ export async function handleStreamRequest(
 
   entry.lastAccess = Date.now();
 
-  // Sentinel: file is already compatible, serve original directly
+  // Sentinel: file is already a compatible MP4, serve original directly
   if (entry.tmpPath === null) {
-    serveFileWithRanges(fullPath, req, res, videoContentType(fullPath));
+    serveFileWithRanges(fullPath, req, res, 'video/mp4');
     return;
   }
 
