@@ -1395,6 +1395,11 @@ export function buildApp() {
     }
   });
 
+  // ── Legacy HTML page ─────────────────────────────────────────────────────
+  app.get('/legacy', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'legacy.html'));
+  });
+
   // ── Multer / URI / general error handler ─────────────────────────────────
   // Placed after all routes so Express routes errors here correctly.
   // Catches URIError (malformed %xx from bots/scanners), MulterError, and fallbacks.
