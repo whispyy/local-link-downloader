@@ -35,6 +35,8 @@ RUN npx tsc --project tsconfig.server.build.json
 # Copy server/package.json into dist/server/ so Node.js treats the
 # compiled output as CommonJS (overrides the root "type": "module")
 RUN cp server/package.json dist/server/package.json
+# Copy static assets that tsc does not emit
+RUN cp server/legacy.html dist/server/legacy.html
 
 # ─── Stage 3: Production image ────────────────────────────────────────────────
 FROM node:20-alpine AS production

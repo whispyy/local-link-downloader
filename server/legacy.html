@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>Files</title>
+  <style>
+    * { -webkit-box-sizing: border-box; box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #111;
+      color: #e0e0e0;
+      font-family: -apple-system, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      -webkit-text-size-adjust: 100%;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hidden { display: none !important; }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    .hdr { background: #1c1c1e; border-bottom: 1px solid #2c2c2e; }
+    .hdr-row { display: table; width: 100%; min-height: 48px; }
+    .hdr-left { display: table-cell; width: 1px; white-space: nowrap; vertical-align: middle; padding: 0 4px 0 12px; }
+    .hdr-mid  { display: table-cell; vertical-align: middle; padding: 0 12px; overflow: hidden; }
+    .hdr-right { display: table-cell; width: 1px; white-space: nowrap; vertical-align: middle; padding: 0 12px 0 4px; }
+    .hdr-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .hdr-btn { background: none; border: none; color: #4a9eff; font-size: 15px; cursor: pointer; padding: 12px 8px; }
+
+    /* ── Login ───────────────────────────────────────────────────────────── */
+    #v-login { padding: 60px 24px 0; text-align: center; }
+    #v-login h2 { font-size: 30px; font-weight: 700; margin-bottom: 8px; }
+    #v-login .sub { color: #888; font-size: 15px; margin-bottom: 40px; }
+    #pw-input {
+      display: block; width: 100%; max-width: 320px; margin: 0 auto 12px;
+      padding: 14px 16px; background: #1c1c1e; border: 1px solid #3a3a3c;
+      border-radius: 10px; color: #e0e0e0; font-size: 16px; outline: none;
+      -webkit-appearance: none;
+    }
+    #login-btn {
+      display: block; width: 100%; max-width: 320px; margin: 0 auto;
+      padding: 14px; background: #2563eb; border: none; border-radius: 10px;
+      color: white; font-size: 16px; font-weight: 600; cursor: pointer;
+      -webkit-appearance: none;
+    }
+    #login-btn:active { background: #1d4ed8; }
+    #login-btn:disabled { background: #3a3a3c; color: #555; }
+    #login-err { margin-top: 14px; color: #f87171; font-size: 14px; }
+
+    /* ── Folder list ─────────────────────────────────────────────────────── */
+    #folder-list { padding: 16px; }
+    .folder-btn {
+      display: block; width: 100%; margin-bottom: 10px; padding: 16px;
+      background: #1c1c1e; border: 1px solid #2c2c2e; border-radius: 10px;
+      color: #e0e0e0; font-size: 16px; text-align: left; cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .folder-btn:active { background: #2c2c2e; }
+
+    /* ── Browse list ─────────────────────────────────────────────────────── */
+    #browse-list { list-style: none; }
+    .li-item { border-bottom: 1px solid #1c1c1e; }
+    .li-btn {
+      display: block; width: 100%; padding: 14px 16px;
+      background: none; border: none; color: #e0e0e0;
+      font-size: 15px; text-align: left; cursor: pointer;
+      -webkit-appearance: none;
+    }
+    .li-btn:active { background: #1c1c1e; }
+    .li-a { display: block; padding: 14px 16px; color: #e0e0e0; text-decoration: none; font-size: 15px; }
+    .li-a:active { background: #1c1c1e; }
+    .nm { display: block; word-break: break-word; }
+    .mt { display: block; color: #666; font-size: 12px; margin-top: 3px; }
+    #browse-more { padding: 16px; text-align: center; }
+    .more-btn {
+      padding: 12px 24px; background: #1c1c1e; border: 1px solid #2c2c2e;
+      border-radius: 8px; color: #4a9eff; font-size: 15px; cursor: pointer;
+    }
+
+    /* ── Player ──────────────────────────────────────────────────────────── */
+    #video-el { width: 100%; display: block; background: black; }
+    #audio-el { width: 100%; display: block; margin: 24px 0; }
+    #player-info { padding: 10px 16px; font-size: 12px; color: #555; word-break: break-all; }
+
+    /* ── Image overlay ───────────────────────────────────────────────────── */
+    #img-overlay {
+      display: none; position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%; background: rgba(0,0,0,0.96); z-index: 1000;
+    }
+    #img-close {
+      position: absolute; top: 8px; right: 12px;
+      color: white; font-size: 30px; cursor: pointer;
+      background: none; border: none; padding: 10px; line-height: 1; z-index: 1001;
+    }
+    #img-el {
+      position: absolute; top: 50%; left: 50%;
+      max-width: 100%; max-height: 100%;
+      -webkit-transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%);
+    }
+
+    /* ── Status messages ─────────────────────────────────────────────────── */
+    .st { text-align: center; padding: 40px 16px; color: #666; font-size: 15px; }
+    .st.err { color: #f87171; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login ──────────────────────────────────────────────────────────────── -->
+<div id="v-login" class="hidden">
+  <h2>Files</h2>
+  <p class="sub">Enter your password to continue</p>
+  <input id="pw-input" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="login-btn">Sign in</button>
+  <p id="login-err" class="hidden"></p>
+</div>
+
+<!-- ── Folders ────────────────────────────────────────────────────────────── -->
+<div id="v-folders" class="hidden">
+  <div class="hdr">
+    <div class="hdr-row">
+      <div class="hdr-mid"><span class="hdr-title">Files</span></div>
+      <div class="hdr-right"><button id="logout-btn" class="hdr-btn">Logout</button></div>
+    </div>
+  </div>
+  <div id="folder-list"></div>
+</div>
+
+<!-- ── Browse ─────────────────────────────────────────────────────────────── -->
+<div id="v-browse" class="hidden">
+  <div class="hdr">
+    <div class="hdr-row">
+      <div class="hdr-left"><button id="browse-back" class="hdr-btn">&#8592; Back</button></div>
+      <div class="hdr-mid"><span id="browse-title" class="hdr-title"></span></div>
+    </div>
+  </div>
+  <div id="browse-status" class="st hidden">Loading&#8230;</div>
+  <ul id="browse-list"></ul>
+  <div id="browse-more" class="hidden"></div>
+</div>
+
+<!-- ── Player ─────────────────────────────────────────────────────────────── -->
+<div id="v-player" class="hidden">
+  <div class="hdr">
+    <div class="hdr-row">
+      <div class="hdr-left"><button id="player-back" class="hdr-btn">&#8592; Back</button></div>
+      <div class="hdr-mid"><span id="player-title" class="hdr-title"></span></div>
+    </div>
+  </div>
+  <video id="video-el" controls preload="metadata" webkit-playsinline class="hidden"></video>
+  <audio id="audio-el" controls preload="metadata" class="hidden"></audio>
+  <p id="player-info"></p>
+</div>
+
+<!-- ── Image overlay ──────────────────────────────────────────────────────── -->
+<div id="img-overlay">
+  <button id="img-close">&#x2715;</button>
+  <img id="img-el" src="" alt="">
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Constants ───────────────────────────────────────────────────────────────
+  var TOKEN_KEY  = 'legacy_token';
+  var PAGE_LIMIT = 50;
+  var VIDEO_EXT  = { mp4:1, mkv:1, avi:1, mov:1, wmv:1, flv:1, webm:1, m4v:1, ts:1, mpg:1, mpeg:1 };
+  var AUDIO_EXT  = { mp3:1, wav:1, aac:1, flac:1, ogg:1, m4a:1 };
+  var IMAGE_EXT  = { jpg:1, jpeg:1, png:1, gif:1, bmp:1, webp:1, svg:1 };
+  var ALL_VIEWS  = ['v-login', 'v-folders', 'v-browse', 'v-player'];
+
+  // ── App state ───────────────────────────────────────────────────────────────
+  var transcoding = false;
+  var navStack    = [];
+
+  // ── Token ───────────────────────────────────────────────────────────────────
+  function getToken()  { return localStorage.getItem(TOKEN_KEY) || ''; }
+  function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+  function clearToken(){ localStorage.removeItem(TOKEN_KEY); }
+
+  // ── DOM helpers ─────────────────────────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+
+  function hasClass(node, cls) {
+    return (' ' + node.className + ' ').indexOf(' ' + cls + ' ') >= 0;
+  }
+  function addClass(node, cls) {
+    if (!hasClass(node, cls)) node.className += ' ' + cls;
+  }
+  function removeClass(node, cls) {
+    node.className = (' ' + node.className + ' ').replace(' ' + cls + ' ', ' ').trim();
+  }
+  function show(id) { removeClass(el(id), 'hidden'); }
+  function hide(id) { addClass(el(id), 'hidden'); }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024)        return b + ' B';
+    if (b < 1048576)     return Math.round(b / 1024) + ' KB';
+    if (b < 1073741824)  return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
+  }
+
+  // ── XHR ─────────────────────────────────────────────────────────────────────
+  function apiGet(url, cb) {
+    var req = new XMLHttpRequest();
+    req.open('GET', url, true);
+    req.setRequestHeader('Authorization', 'Bearer ' + getToken());
+    req.onreadystatechange = function() {
+      if (req.readyState !== 4) return;
+      var data = null;
+      try { data = JSON.parse(req.responseText); } catch(e) {}
+      if (req.status >= 200 && req.status < 300) cb(null, data);
+      else cb(req.status, data);
+    };
+    req.send();
+  }
+
+  function apiPost(url, body, cb) {
+    var req = new XMLHttpRequest();
+    req.open('POST', url, true);
+    req.setRequestHeader('Content-Type', 'application/json');
+    req.setRequestHeader('Authorization', 'Bearer ' + getToken());
+    req.onreadystatechange = function() {
+      if (req.readyState !== 4) return;
+      var data = null;
+      try { data = JSON.parse(req.responseText); } catch(e) {}
+      if (req.status >= 200 && req.status < 300) cb(null, data);
+      else cb(data || req.status, null);
+    };
+    req.send(JSON.stringify(body));
+  }
+
+  // ── URL builders ────────────────────────────────────────────────────────────
+  function fileUrl(folderKey, subpath, filename) {
+    var u = '/api/browse/' + encodeURIComponent(folderKey) + '/' + encodeURIComponent(filename);
+    u += '?token=' + encodeURIComponent(getToken());
+    if (subpath) u += '&subpath=' + encodeURIComponent(subpath);
+    return u;
+  }
+
+  function streamUrl(folderKey, subpath, filename) {
+    var u = '/api/browse/' + encodeURIComponent(folderKey) + '/' + encodeURIComponent(filename) + '/stream';
+    u += '?token=' + encodeURIComponent(getToken());
+    if (subpath) u += '&subpath=' + encodeURIComponent(subpath);
+    return u;
+  }
+
+  // ── View switching ───────────────────────────────────────────────────────────
+  function showView(id) {
+    for (var i = 0; i < ALL_VIEWS.length; i++) {
+      if (ALL_VIEWS[i] === id) show(ALL_VIEWS[i]);
+      else hide(ALL_VIEWS[i]);
+    }
+  }
+
+  // ── Navigation ───────────────────────────────────────────────────────────────
+  function push(state) { navStack.push(state); render(state); }
+  function pop()       {
+    if (navStack.length <= 1) return;
+    navStack.pop();
+    render(navStack[navStack.length - 1]);
+  }
+
+  function render(state) {
+    if      (state.view === 'login')   renderLogin();
+    else if (state.view === 'folders') renderFolders();
+    else if (state.view === 'browse')  renderBrowse(state.folderKey, state.subpath, 1, false);
+    else if (state.view === 'player')  renderPlayer(state.folderKey, state.subpath, state.filename, state.mediaType);
+  }
+
+  function onUnauth() {
+    clearToken();
+    navStack = [];
+    push({ view: 'login' });
+  }
+
+  // ── Login ────────────────────────────────────────────────────────────────────
+  function renderLogin() {
+    showView('v-login');
+    el('pw-input').value = '';
+    hide('login-err');
+  }
+
+  function doLogin() {
+    var pw  = el('pw-input').value;
+    var btn = el('login-btn');
+    btn.disabled = true;
+    hide('login-err');
+    apiPost('/api/auth', { password: pw }, function(err, data) {
+      btn.disabled = false;
+      if (err) {
+        var msg = (err && err.error) ? err.error : 'Login failed';
+        el('login-err').innerHTML = escHtml(msg);
+        show('login-err');
+        return;
+      }
+      setToken(data.token);
+      navStack = [];
+      push({ view: 'folders' });
+    });
+  }
+
+  el('login-btn').onclick = doLogin;
+  el('pw-input').onkeypress = function(e) {
+    if ((e.keyCode || e.which) === 13) doLogin();
+  };
+
+  // ── Folders ──────────────────────────────────────────────────────────────────
+  function renderFolders() {
+    showView('v-folders');
+    var list = el('folder-list');
+    list.innerHTML = '<p class="st">Loading&#8230;</p>';
+    apiGet('/api/config', function(err, data) {
+      if (err === 401 || err === 403) { onUnauth(); return; }
+      if (err || !data || !data.folders || !data.folders.length) {
+        list.innerHTML = '<p class="st err">Could not load folders.</p>';
+        return;
+      }
+      transcoding = !!data.transcoding;
+      list.innerHTML = '';
+      var folders = data.folders;
+      for (var i = 0; i < folders.length; i++) {
+        (function(key) {
+          var btn = document.createElement('button');
+          btn.className = 'folder-btn';
+          btn.innerHTML = '&#128193; ' + escHtml(key);
+          btn.onclick = function() { push({ view: 'browse', folderKey: key, subpath: '' }); };
+          list.appendChild(btn);
+        })(folders[i]);
+      }
+    });
+  }
+
+  el('logout-btn').onclick = function() { onUnauth(); };
+
+  // ── Browse ───────────────────────────────────────────────────────────────────
+  function renderBrowse(folderKey, subpath, page, append) {
+    if (!append) {
+      showView('v-browse');
+      el('browse-title').textContent = subpath ? subpath.split('/').pop() : folderKey;
+      el('browse-list').innerHTML = '';
+      el('browse-status').className = 'st';
+      el('browse-status').innerHTML = 'Loading&#8230;';
+      show('browse-status');
+      hide('browse-more');
+    }
+
+    var url = '/api/browse/' + encodeURIComponent(folderKey) +
+              '?page=' + page + '&limit=' + PAGE_LIMIT;
+    if (subpath) url += '&subpath=' + encodeURIComponent(subpath);
+
+    apiGet(url, function(err, data) {
+      hide('browse-status');
+      if (err === 401 || err === 403) { onUnauth(); return; }
+      if (err || !data) {
+        el('browse-status').className = 'st err';
+        el('browse-status').textContent = 'Error loading files.';
+        show('browse-status');
+        return;
+      }
+
+      var list = el('browse-list');
+
+      // Dirs on first load only
+      if (!append && data.dirs && data.dirs.length) {
+        for (var i = 0; i < data.dirs.length; i++) {
+          appendDir(list, folderKey, subpath, data.dirs[i].name);
+        }
+      }
+
+      // Files
+      if (data.files && data.files.length) {
+        for (var j = 0; j < data.files.length; j++) {
+          appendFile(list, folderKey, subpath, data.files[j]);
+        }
+      }
+
+      // Empty state
+      if (!append && (!data.dirs || !data.dirs.length) && (!data.files || !data.files.length)) {
+        el('browse-status').className = 'st';
+        el('browse-status').textContent = 'Empty folder.';
+        show('browse-status');
+      }
+
+      // Load more
+      var loaded = (page - 1) * PAGE_LIMIT + (data.files ? data.files.length : 0);
+      if (loaded < data.total) {
+        var moreEl = el('browse-more');
+        moreEl.innerHTML = '';
+        var btn = document.createElement('button');
+        btn.className = 'more-btn';
+        btn.textContent = 'Load more (' + (data.total - loaded) + ' remaining)';
+        btn.onclick = (function(nextPage) {
+          return function() {
+            hide('browse-more');
+            renderBrowse(folderKey, subpath, nextPage, true);
+          };
+        })(page + 1);
+        moreEl.appendChild(btn);
+        show('browse-more');
+      }
+    });
+  }
+
+  function appendDir(list, folderKey, subpath, name) {
+    var li  = document.createElement('li');
+    li.className = 'li-item';
+    var btn = document.createElement('button');
+    btn.className = 'li-btn';
+    btn.innerHTML = '&#128193; <span class="nm">' + escHtml(name) + '</span>';
+    btn.onclick = (function(n) {
+      return function() {
+        var sp = subpath ? subpath + '/' + n : n;
+        push({ view: 'browse', folderKey: folderKey, subpath: sp });
+      };
+    })(name);
+    li.appendChild(btn);
+    list.appendChild(li);
+  }
+
+  function appendFile(list, folderKey, subpath, file) {
+    var li   = document.createElement('li');
+    li.className = 'li-item';
+    var ext  = file.name.lastIndexOf('.') >= 0
+               ? file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase()
+               : '';
+    var meta = '<span class="mt">' + escHtml(fmtSize(file.size)) + '</span>';
+
+    if (VIDEO_EXT[ext]) {
+      var btn = document.createElement('button');
+      btn.className = 'li-btn';
+      btn.innerHTML = '&#9654; <span class="nm">' + escHtml(file.name) + '</span>' + meta;
+      btn.onclick = (function(f) {
+        return function() { push({ view: 'player', folderKey: folderKey, subpath: subpath, filename: f.name, mediaType: 'video' }); };
+      })(file);
+      li.appendChild(btn);
+
+    } else if (AUDIO_EXT[ext]) {
+      var audBtn = document.createElement('button');
+      audBtn.className = 'li-btn';
+      audBtn.innerHTML = '&#9835; <span class="nm">' + escHtml(file.name) + '</span>' + meta;
+      audBtn.onclick = (function(f) {
+        return function() { push({ view: 'player', folderKey: folderKey, subpath: subpath, filename: f.name, mediaType: 'audio' }); };
+      })(file);
+      li.appendChild(audBtn);
+
+    } else if (IMAGE_EXT[ext]) {
+      var imgBtn = document.createElement('button');
+      imgBtn.className = 'li-btn';
+      imgBtn.innerHTML = '&#128247; <span class="nm">' + escHtml(file.name) + '</span>' + meta;
+      imgBtn.onclick = (function(f) {
+        return function() { openImage(fileUrl(folderKey, subpath, f.name)); };
+      })(file);
+      li.appendChild(imgBtn);
+
+    } else {
+      var a = document.createElement('a');
+      a.className = 'li-a';
+      a.href = fileUrl(folderKey, subpath, file.name);
+      a.innerHTML = '&#8659; <span class="nm">' + escHtml(file.name) + '</span>' + meta;
+      li.appendChild(a);
+    }
+    list.appendChild(li);
+  }
+
+  el('browse-back').onclick = pop;
+
+  // ── Player ───────────────────────────────────────────────────────────────────
+  function renderPlayer(folderKey, subpath, filename, mediaType) {
+    showView('v-player');
+    el('player-title').textContent = filename;
+    el('player-info').textContent  = filename;
+
+    var isAudio = mediaType === 'audio';
+    var video   = el('video-el');
+    var audio   = el('audio-el');
+
+    // Reset both elements before switching
+    video.pause(); video.src = '';
+    audio.pause(); audio.src = '';
+
+    if (isAudio) {
+      addClass(video, 'hidden');
+      removeClass(audio, 'hidden');
+      audio.src = fileUrl(folderKey, subpath, filename);
+      audio.load();
+    } else {
+      addClass(audio, 'hidden');
+      removeClass(video, 'hidden');
+      video.src = transcoding
+        ? streamUrl(folderKey, subpath, filename)
+        : fileUrl(folderKey, subpath, filename);
+      video.load();
+    }
+  }
+
+  el('player-back').onclick = function() {
+    var video = el('video-el');
+    var audio = el('audio-el');
+    video.pause(); video.src = '';
+    audio.pause(); audio.src = '';
+    pop();
+  };
+
+  // ── Image overlay ────────────────────────────────────────────────────────────
+  function openImage(url) {
+    el('img-el').src = url;
+    el('img-overlay').style.display = 'block';
+  }
+  function closeImage() {
+    el('img-overlay').style.display = 'none';
+    el('img-el').src = '';
+  }
+  el('img-close').onclick = closeImage;
+  el('img-overlay').onclick = function(e) { if (e.target === this) closeImage(); };
+
+  // ── Boot ─────────────────────────────────────────────────────────────────────
+  // Probe /api/config: if it succeeds, auth is disabled or we have a valid
+  // stored token → go straight to folders. Otherwise show login.
+  apiGet('/api/config', function(err, data) {
+    if (err) {
+      push({ view: 'login' });
+    } else {
+      transcoding = !!(data && data.transcoding);
+      push({ view: 'folders' });
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
