@@ -9,12 +9,12 @@
   <!-- Background -->
   <rect width="512" height="512" rx="96" fill="url(#bg)"/>
 
-  <!-- Cyan download arrow — tip lands exactly on the house roof peak -->
-  <rect x="232" y="52" width="48" height="156" rx="24" fill="#22d3ee"/>
-  <path d="M 130 192 L 256 306 L 382 192 Z" fill="#22d3ee"/>
+  <!-- Cyan download arrow — smaller, tip lands on the house roof peak -->
+  <rect x="238" y="32" width="36" height="110" rx="18" fill="#22d3ee"/>
+  <path d="M 170 137 L 256 222 L 342 137 Z" fill="#22d3ee"/>
 
-  <!-- House outline — roof peak aligns with the arrow tip -->
-  <path d="M 80 402 L 256 306 L 432 402 L 432 456 L 80 456 Z"
-        fill="none" stroke="white" stroke-width="28"
+  <!-- House outline — taller, roof peak aligns with the arrow tip -->
+  <path d="M 80 345 L 256 240 L 432 345 L 432 456 L 80 456 Z"
+        fill="none" stroke="white" stroke-width="36"
         stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

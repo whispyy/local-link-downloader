@@ -1,12 +1,12 @@
 import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import ErrorBoundary from './ErrorBoundary.tsx';
-import App from './App.tsx';
-import QueuePage from './QueuePage.tsx';
-import BrowsePage from './BrowsePage.tsx';
-import LoginPage from './LoginPage.tsx';
-import UsagePage from './UsagePage.tsx';
-import VersionBadge from './VersionBadge.tsx';
+import ErrorBoundary from './components/ErrorBoundary.tsx';
+import App from './pages/App.tsx';
+import QueuePage from './pages/QueuePage.tsx';
+import BrowsePage from './pages/BrowsePage.tsx';
+import LoginPage from './pages/LoginPage.tsx';
+import UsagePage from './pages/UsagePage.tsx';
+import VersionBadge from './components/VersionBadge.tsx';
 import './index.css';
 
 const SESSION_KEY = 'wd_token';

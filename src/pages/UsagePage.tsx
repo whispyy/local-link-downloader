@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuthHeaders } from './useAuthHeaders';
+import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
-import NavBar from './NavBar';
+import NavBar from '../components/NavBar';
 
 interface UsageEntry {
   timestamp: string;
@@ -234,7 +234,30 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
             </div>
           ) : (
             <>
-              <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
+              {/* Mobile card layout */}
+              <div className="sm:hidden space-y-2">
+                {entries.map((e, i) => (
+                  <div key={i} className="bg-th-bg rounded-lg border border-th-border-light p-3 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${methodColor(e.method)}`}>
+                          {e.method}
+                        </span>
+                        <span className={`font-mono text-xs font-semibold ${statusColor(e.statusCode)}`}>{e.statusCode}</span>
+                      </div>
+                      <span className="text-th-text-dim text-xs">{e.responseTimeMs}ms</span>
+                    </div>
+                    <div className="font-mono text-xs text-th-text-sub truncate">{e.path}</div>
+                    <div className="flex items-center justify-between gap-2 text-th-text-faint text-[11px]">
+                      <span>{formatTs(e.timestamp)}</span>
+                      <span className="font-mono">{e.ip}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table layout */}
+              <div className="hidden sm:block bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">

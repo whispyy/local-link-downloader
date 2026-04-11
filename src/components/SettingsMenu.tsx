@@ -6,7 +6,7 @@ import {
   setNotificationPreference,
   requestPermissionIfNeeded,
   NotificationStatus,
-} from './notifications';
+} from '../notifications';
 
 type Theme = 'light' | 'dark' | 'auto';
 const CYCLE: Theme[] = ['light', 'dark', 'auto'];

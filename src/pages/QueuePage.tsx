@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuthHeaders } from './useAuthHeaders';
+import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList } from 'lucide-react';
-import { formatBytes, formatDate } from './utils';
-import NavBar from './NavBar';
-import { isTerminalTransition, sendJobNotification } from './notifications';
+import { formatBytes, formatDate } from '../utils';
+import NavBar from '../components/NavBar';
+import { isTerminalTransition, sendJobNotification } from '../notifications';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 
 const FETCH_JOBS_INTERVAL = 10_000; // 10 seconds
 
@@ -172,6 +174,8 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
     }
   }, [authHeaders, onUnauthorized]);
 
+  const pullRefresh = usePullToRefresh(useCallback(async () => { await fetchJobs(); }, [fetchJobs]));
+
   useEffect(() => {
     fetchJobs();
     const interval = setInterval(fetchJobs, FETCH_JOBS_INTERVAL);
@@ -193,7 +197,8 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       <NavBar currentPage="queue" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6" ref={pullRefresh.containerRef}>
+      <PullToRefreshIndicator pullDistance={pullRefresh.pullDistance} refreshing={pullRefresh.refreshing} />
       <div className="max-w-5xl mx-auto">
         {/* Page title */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -254,40 +259,38 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
             No jobs{filter !== 'all' ? ` with status "${filter}"` : ''}.
           </div>
         ) : (
-          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
+          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
-                  <th className="px-4 py-3 w-6"></th>
+                  <th className="px-4 py-3 w-6 hidden sm:table-cell"></th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Filename</th>
-                  <th className="px-4 py-3">Folder</th>
+                  <th className="px-4 py-3 hidden sm:table-cell">Folder</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-th-border-lighter">
                 {filtered.map((job) => {
                   const expanded = expandedIds.has(job.id);
+                  const canStop = job.status === 'queued' || job.status === 'downloading';
                   return (
                     <React.Fragment key={job.id}>
-                      <tr className="hover:bg-th-bg-alt transition">
-                        {/* Expand toggle */}
-                        <td className="px-2 py-3 text-center">
+                      <tr className="hover:bg-th-bg-alt transition" onClick={() => toggleExpand(job.id)}>
+                        <td className="px-2 py-3 text-center hidden sm:table-cell">
                           <button
-                            onClick={() => toggleExpand(job.id)}
+                            onClick={(e) => { e.stopPropagation(); toggleExpand(job.id); }}
                             title={expanded ? 'Collapse details' : 'Expand details'}
                             className="text-th-text-faint hover:text-th-text-dim transition"
                           >
-                            <ChevronDown
-                              className={`w-4 h-4 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
-                            />
+                            <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} />
                           </button>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-4 py-4 sm:py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <StatusBadge status={job.status} />
-                            {(job.status === 'queued' || job.status === 'downloading') && (
+                            {canStop && (
                               <button
-                                onClick={() => handleStop(job.id)}
+                                onClick={(e) => { e.stopPropagation(); handleStop(job.id); }}
                                 disabled={stoppingIds.has(job.id)}
                                 title="Stop and remove"
                                 className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -300,8 +303,9 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-4 sm:py-3">
                           <span className="font-medium text-th-text-sub">{job.filename}</span>
+                          <span className="text-xs text-th-text-faint sm:hidden block">{job.folder_key}</span>
                           {(job.status !== 'queued' && (job.downloaded_bytes != null || job.total_bytes != null)) && (
                             <span className="block text-xs text-th-text-faint mt-0.5">
                               <SizeCell job={job} />
@@ -313,11 +317,11 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{job.folder_key}</td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden sm:table-cell">{job.folder_key}</td>
                       </tr>
                       {expanded && (
                         <tr className="bg-th-bg-alt">
-                          <td colSpan={1} aria-hidden="true" />
+                          <td colSpan={1} aria-hidden="true" className="hidden sm:table-cell" />
                           <td colSpan={3} className="px-4 pb-3 pt-1">
                             <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
                               <div>
