@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuthHeaders } from './useAuthHeaders';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil } from 'lucide-react';
-import { formatBytes, formatDate, getMediaType } from './utils';
-import NavBar from './NavBar';
-import { useDragToFolder } from './useDragToFolder';
+import { formatBytes, formatDate, getMediaType } from '../utils';
+import NavBar from '../components/NavBar';
+import { useDragToFolder } from '../hooks/useDragToFolder';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 
 interface BrowseFile {
   name: string;
@@ -419,13 +421,16 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const getSelectedFiles = useCallback(() => Array.from(selectedFiles), [selectedFiles]);
   const drag = useDragToFolder(handleMoveToSubpath, getSelectedFiles);
 
+  const pullRefresh = usePullToRefresh(useCallback(async () => { await fetchFiles(); }, [fetchFiles]));
+
   const mediaType = previewFile ? getMediaType(previewFile) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       <NavBar currentPage="browse" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6" ref={pullRefresh.containerRef}>
+      <PullToRefreshIndicator pullDistance={pullRefresh.pullDistance} refreshing={pullRefresh.refreshing} />
       <div className="max-w-5xl mx-auto">
         {/* Page title */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -650,14 +655,14 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         ) : files.length === 0 && dirs.length === 0 && !subpath ? (
           <div className="py-20 text-center text-th-text-faint text-sm">No files in this folder.</div>
         ) : (
-          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-x-auto">
+          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
                   <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3 w-28">Size</th>
-                  <th className="px-4 py-3 w-44">Modified</th>
-                  <th className="px-4 py-3 w-32"></th>
+                  <th className="px-4 py-3 w-28 hidden sm:table-cell">Size</th>
+                  <th className="px-4 py-3 w-44 hidden md:table-cell">Modified</th>
+                  <th className="px-4 py-3 w-32 hidden sm:table-cell"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-th-border-lighter">
@@ -668,15 +673,15 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     onClick={() => handleBreadcrumbClick(subpath.split('/').length - 2)}
                     {...drag.backRow()}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="shrink-0"><Folder className="w-4 h-4 text-amber-500" /></span>
                         <span className="font-medium text-th-text-sub">..</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
-                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
-                    <td className="px-4 py-3"></td>
+                    <td className="px-4 py-3 text-th-text-dim hidden sm:table-cell">&mdash;</td>
+                    <td className="px-4 py-3 text-th-text-dim hidden md:table-cell">&mdash;</td>
+                    <td className="px-4 py-3 hidden sm:table-cell"></td>
                   </tr>
                 )}
                 {/* Directory rows */}
@@ -687,7 +692,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     onClick={() => { if (!renamingDir && !confirmDeleteDir) handleNavigateInto(dirName); }}
                     {...drag.dirRow(dirName)}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="shrink-0"><Folder className="w-4 h-4 text-amber-500" /></span>
                         {renamingDir === dirName ? (
@@ -709,9 +714,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
-                    <td className="px-4 py-3 text-th-text-dim">&mdash;</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-th-text-dim hidden sm:table-cell">&mdash;</td>
+                    <td className="px-4 py-3 text-th-text-dim hidden md:table-cell">&mdash;</td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
                       <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                         {confirmDeleteDir === dirName ? (
                           <>
@@ -768,97 +773,103 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   </tr>
                 ))}
                 {files.map((file, fileIndex) => {
+                  const isSelected = selectedFiles.has(file.name);
+                  const showExpanded = isSelected && selectedFiles.size === 1;
                   return (
-                    <tr
-                      key={file.name}
-                      className={`hover:bg-th-bg-alt transition cursor-pointer ${selectedFiles.has(file.name) ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
-                      onClick={(e) => handleFileClick(file.name, fileIndex, e)}
-                      {...drag.fileRow(file.name)}
-                    >
-                      <td className="px-4 py-3 max-w-0 min-w-[150px]">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="shrink-0"><MediaIcon filename={file.name} /></span>
-                          <span className="font-medium text-th-text-sub truncate" title={file.name}>{file.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{formatBytes(file.size)}</td>
-                      <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{formatDate(file.modifiedAt)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          {confirmDelete === file.name ? (
-                            <>
-                              <button
-                                onClick={() => handleDelete(file.name)}
-                                disabled={deleting}
-                                className="px-2 py-1 rounded text-xs font-medium bg-red-500/15 text-red-600 hover:bg-red-500/25 transition disabled:opacity-50"
-                              >
-                                {deleting ? 'Deleting…' : 'Delete'}
-                              </button>
-                              <button
-                                onClick={() => setConfirmDelete(null)}
-                                className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : moveTarget === file.name ? (
-                            moving ? (
-                              <span className="flex items-center gap-1.5 px-2 py-1 text-xs text-th-text-dim">
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                Moving…
-                              </span>
-                            ) : (
-                            <>
-                              <select
-                                autoFocus
-                                defaultValue=""
-                                onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }}
-                                className="pl-2 pr-4 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none"
-                              >
-                                <option value="" disabled>Move to…</option>
-                                {folders.filter(f => f !== folderKey).map(f => (
-                                  <option key={f} value={f}>{f}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => setMoveTarget(null)}
-                                className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                            )
-                          ) : (
-                            <>
-                              <a
-                                href={fileUrl(file.name)}
-                                download={file.name}
-                                className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub transition"
-                                title="Download"
-                              >
-                                <Download className="w-4 h-4" />
-                              </a>
-                              {folders.length > 1 && (
-                                <button
-                                  onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }}
-                                  className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition"
-                                  title="Move to another folder"
-                                >
-                                  <ArrowRightLeft className="w-4 h-4" />
+                    <Fragment key={file.name}>
+                      <tr
+                        className={`hover:bg-th-bg-alt transition cursor-pointer ${isSelected ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
+                        onClick={(e) => handleFileClick(file.name, fileIndex, e)}
+                        {...drag.fileRow(file.name)}
+                      >
+                        <td className="px-4 py-4 sm:py-3 max-w-0 min-w-[150px]">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="shrink-0"><MediaIcon filename={file.name} /></span>
+                            <div className="min-w-0">
+                              <span className="font-medium text-th-text-sub truncate block" title={file.name}>{file.name}</span>
+                              <span className="text-xs text-th-text-faint sm:hidden">{formatBytes(file.size)}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden sm:table-cell">{formatBytes(file.size)}</td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden md:table-cell">{formatDate(file.modifiedAt)}</td>
+                        {/* Desktop action buttons */}
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            {confirmDelete === file.name ? (
+                              <>
+                                <button onClick={() => handleDelete(file.name)} disabled={deleting} className="px-2 py-1 rounded text-xs font-medium bg-red-500/15 text-red-600 hover:bg-red-500/25 transition disabled:opacity-50">
+                                  {deleting ? 'Deleting…' : 'Delete'}
                                 </button>
-                              )}
-                              <button
-                                onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }}
-                                className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                                <button onClick={() => setConfirmDelete(null)} className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition">Cancel</button>
+                              </>
+                            ) : moveTarget === file.name ? (
+                              moving ? (
+                                <span className="flex items-center gap-1.5 px-2 py-1 text-xs text-th-text-dim"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Moving…</span>
+                              ) : (
+                                <>
+                                  <select autoFocus defaultValue="" onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }} className="pl-2 pr-4 py-1 rounded text-xs border border-th-border bg-th-bg text-th-text outline-none">
+                                    <option value="" disabled>Move to…</option>
+                                    {folders.filter(f => f !== folderKey).map(f => (<option key={f} value={f}>{f}</option>))}
+                                  </select>
+                                  <button onClick={() => setMoveTarget(null)} className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition">Cancel</button>
+                                </>
+                              )
+                            ) : (
+                              <>
+                                <a href={fileUrl(file.name)} download={file.name} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub transition" title="Download"><Download className="w-4 h-4" /></a>
+                                {folders.length > 1 && (
+                                  <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Move to another folder"><ArrowRightLeft className="w-4 h-4" /></button>
+                                )}
+                                <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Mobile expanded actions — visible when file is selected */}
+                      {showExpanded && (
+                        <tr className="sm:hidden bg-th-bg-muted/50" onClick={(e) => e.stopPropagation()}>
+                          <td colSpan={4} className="px-4 py-2">
+                            {confirmDelete === file.name ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-th-text-dim mr-auto">Delete this file?</span>
+                                <button onClick={() => handleDelete(file.name)} disabled={deleting} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white transition disabled:opacity-50">
+                                  {deleting ? 'Deleting…' : 'Delete'}
+                                </button>
+                                <button onClick={() => setConfirmDelete(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-dim hover:text-th-text bg-th-bg border border-th-border-light transition">Cancel</button>
+                              </div>
+                            ) : moveTarget === file.name ? (
+                              moving ? (
+                                <span className="flex items-center gap-1.5 text-xs text-th-text-dim"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Moving…</span>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <select autoFocus defaultValue="" onChange={(e) => { if (e.target.value) handleMove(file.name, e.target.value); }} className="flex-1 pl-3 pr-6 py-1.5 rounded-lg text-xs border border-th-border bg-th-bg text-th-text outline-none">
+                                    <option value="" disabled>Move to…</option>
+                                    {folders.filter(f => f !== folderKey).map(f => (<option key={f} value={f}>{f}</option>))}
+                                  </select>
+                                  <button onClick={() => setMoveTarget(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-dim hover:text-th-text bg-th-bg border border-th-border-light transition">Cancel</button>
+                                </div>
+                              )
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <a href={fileUrl(file.name)} download={file.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                  <Download className="w-3.5 h-3.5" />Download
+                                </a>
+                                {folders.length > 1 && (
+                                  <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                    <ArrowRightLeft className="w-3.5 h-3.5" />Move
+                                  </button>
+                                )}
+                                <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition ml-auto">
+                                  <Trash2 className="w-3.5 h-3.5" />Delete
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -872,7 +883,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-4 py-2.5 sm:px-3 sm:py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="w-4 h-4" /> Prev
             </button>
@@ -882,7 +893,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-4 py-2.5 sm:px-3 sm:py-1.5 text-sm text-th-text bg-th-bg border border-th-border-light rounded-lg hover:bg-th-bg-alt transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next <ChevronRight className="w-4 h-4" />
             </button>
@@ -893,3 +904,4 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     </div>
   );
 }
+

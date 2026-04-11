@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent pinch-to-zoom and overscroll white flash on mobile */
+html {
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  background-color: var(--color-bg-base);
+}
+
+body {
+  background-color: var(--color-bg-base);
+}
+
 /* PWA standalone: pad for the iOS status bar / notch */
 @supports (padding-top: env(safe-area-inset-top)) {
   .pwa-safe-top {

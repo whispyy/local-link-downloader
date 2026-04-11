@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuthHeaders } from './useAuthHeaders';
+import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet } from 'lucide-react';
-import NavBar from './NavBar';
-import { isTerminalTransition, sendJobNotification } from './notifications';
-import { formatBytes } from './utils';
+import NavBar from '../components/NavBar';
+import { isTerminalTransition, sendJobNotification } from '../notifications';
+import { formatBytes } from '../utils';
 
 interface Config {
   folders: string[];
@@ -333,12 +333,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       <NavBar currentPage="download" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
-      <div className="flex items-center justify-center p-3 sm:p-4 min-h-[calc(100vh-3rem)]">
+      <div className="flex items-start sm:items-center justify-center p-3 sm:p-4 sm:min-h-[calc(100vh-3rem)]">
       <div className="w-full max-w-2xl">
-        <div className="bg-th-bg rounded-lg shadow-lg p-5 sm:p-8">
+        <div className="bg-th-bg rounded-lg shadow-lg p-4 sm:p-8">
 
           {/* Page title */}
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
             <Download className="w-6 h-6 shrink-0 text-th-text-sub" />
             <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Download</h1>
           </div>
@@ -350,42 +350,42 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
           )}
 
           {/* Mode tabs */}
-          <div className="flex gap-1 mb-6 bg-th-bg-muted p-1 rounded-lg">
+          <div className="flex gap-1 mb-4 sm:mb-6 bg-th-bg-muted p-1 rounded-lg">
             <button
               type="button"
               onClick={() => { setMode('url'); handleReset(); }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+              className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                 mode === 'url' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
-              <Link className="w-4 h-4" />
+              <Link className="w-4 h-4 shrink-0 hidden sm:block" />
               From URL
             </button>
             <button
               type="button"
               onClick={() => { setMode('upload'); handleReset(); }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+              className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                 mode === 'upload' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="w-4 h-4 shrink-0 hidden sm:block" />
               Upload File
             </button>
             <button
               type="button"
               onClick={() => { setMode('torrent'); handleReset(); }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition ${
+              className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                 mode === 'torrent' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
               }`}
             >
-              <Magnet className="w-4 h-4" />
+              <Magnet className="w-4 h-4 shrink-0 hidden sm:block" />
               Torrent
             </button>
           </div>
 
           {/* ── URL mode ── */}
           {mode === 'url' && (
-            <form onSubmit={handleUrlSubmit} className="space-y-5">
+            <form onSubmit={handleUrlSubmit} className="space-y-4 sm:space-y-5">
               <div>
                 <label htmlFor="url" className="block text-sm font-medium text-th-text-sub mb-2">File URL</label>
                 <input
@@ -429,7 +429,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
           {/* ── Upload mode ── */}
           {mode === 'upload' && (
-            <form onSubmit={handleUploadSubmit} className="space-y-5">
+            <form onSubmit={handleUploadSubmit} className="space-y-4 sm:space-y-5">
               {/* Drop zone */}
               <div
                 onDragOver={handleDragOver}
@@ -505,7 +505,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
 
           {/* ── Torrent mode ── */}
           {mode === 'torrent' && (
-            <form onSubmit={handleTorrentSubmit} className="space-y-5">
+            <form onSubmit={handleTorrentSubmit} className="space-y-4 sm:space-y-5">
               {/* Magnet link input */}
               <div>
                 <label htmlFor="magnet" className="block text-sm font-medium text-th-text-sub mb-2">Magnet Link</label>

@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Lock, Loader2, Eye, EyeOff } from 'lucide-react';
-import ThemeToggle from './ThemeToggle';
+import ThemeToggle from '../components/ThemeToggle';
 
 interface LoginPageProps {
   onSuccess: (token: string) => void;
