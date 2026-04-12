@@ -18,7 +18,7 @@ import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile,
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
 import { buildUsageTracker } from './usage';
-import { notifyDiscord, notifyDiscordError } from './notifier';
+import { notifyDiscord, notifyDiscordError, formatBytes } from './notifier';
 import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -530,7 +530,7 @@ export function buildApp() {
         j.totalBytes = result.totalBytes;
         j.message = `Downloaded to ${fullPath}`;
         log('INFO', 'Download completed', { jobId, fullPath });
-        notifyDiscord(`✅ Download completed: **${j.filename}** → \`${j.folderKey}\``);
+        notifyDiscord(`✅ Download completed: **${j.filename}** → \`${j.folderKey}\`${result.totalBytes ? ` (${formatBytes(result.totalBytes)})` : ''}`);
       } else {
         j.status = 'error';
         j.message = result.message;
@@ -638,7 +638,7 @@ export function buildApp() {
     };
     jobs.set(jobId, job);
     log('INFO', 'File uploaded', { jobId, filename, folderKey, fullPath });
-    notifyDiscord(`✅ Upload completed: **${filename}** → \`${folderKey}\``);
+    notifyDiscord(`✅ Upload completed: **${filename}** → \`${folderKey}\` (${formatBytes(req.file.size)})`);
     scheduleJobExpiry(jobs, jobId);
 
     res.json({
@@ -758,7 +758,7 @@ export function buildApp() {
         jj.torrentRef = undefined;
         jj.updatedAt = new Date().toISOString();
         log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
-        notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\``);
+        notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\`${torrent.length ? ` (${formatBytes(torrent.length)})` : ''}`);
         torrent.destroy();
         scheduleJobExpiry(jobs, jobId);
       });

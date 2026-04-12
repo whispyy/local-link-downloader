@@ -93,6 +93,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [videoRetryKey, setVideoRetryKey] = useState(0);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textLoading, setTextLoading] = useState(false);
+  const closePreview = useCallback(() => {
+    setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null);
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [moveTarget, setMoveTarget] = useState<string | null>(null); // filename being moved
@@ -108,6 +111,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [confirmDeleteDir, setConfirmDeleteDir] = useState<string | null>(null);
   const [deletingDir, setDeletingDir] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [renamingBreadcrumb, setRenamingBreadcrumb] = useState(false);
+  const [renameBreadcrumbValue, setRenameBreadcrumbValue] = useState('');
+  const [renameBreadcrumbLoading, setRenameBreadcrumbLoading] = useState(false);
+  const [confirmDeleteBreadcrumb, setConfirmDeleteBreadcrumb] = useState(false);
+  const [deletingBreadcrumb, setDeletingBreadcrumb] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // Close "more" dropdown on outside click
@@ -182,11 +190,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const resetSelection = useCallback(() => {
     setSelectedFiles(new Set());
     lastClickedIdx.current = null;
-    setPreviewFile(null);
-    setVideoError(false);
-    setVideoRetryKey(0);
-    setTextContent(null);
-  }, []);
+    closePreview();
+  }, [closePreview]);
 
   const handleFolderChange = (key: string) => {
     setFolderKey(key);
@@ -246,7 +251,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         return;
       }
       setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
-      if (previewFile === filename) { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }
+      if (previewFile === filename) { closePreview(); }
       setConfirmDelete(null);
       fetchFiles();
     } catch {
@@ -254,7 +259,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setDeleting(false);
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles, closePreview]);
 
   const handleMove = useCallback(async (filename: string, targetFolder: string) => {
     setMoving(true);
@@ -271,7 +276,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         return;
       }
       setSelectedFiles(s => { const n = new Set(s); n.delete(filename); return n; });
-      if (previewFile === filename) { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }
+      if (previewFile === filename) { closePreview(); }
       setMoveTarget(null);
       fetchFiles();
     } catch {
@@ -279,13 +284,18 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setMoving(false);
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles, closePreview]);
+
+  const resetBreadcrumbActions = useCallback(() => {
+    setRenamingBreadcrumb(false); setRenameBreadcrumbValue(''); setConfirmDeleteBreadcrumb(false);
+  }, []);
 
   const handleNavigateInto = useCallback((dirName: string) => {
     setSubpath(prev => prev === '' ? dirName : `${prev}/${dirName}`);
     setPage(1);
     resetSelection();
-  }, [resetSelection]);
+    resetBreadcrumbActions();
+  }, [resetSelection, resetBreadcrumbActions]);
 
   const handleBreadcrumbClick = useCallback((index: number) => {
     if (index === -1) {
@@ -296,7 +306,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     }
     setPage(1);
     resetSelection();
-  }, [subpath, resetSelection]);
+    resetBreadcrumbActions();
+  }, [subpath, resetSelection, resetBreadcrumbActions]);
 
   const handleCreateFolder = useCallback(async () => {
     const trimmed = newFolderName.trim();
@@ -373,6 +384,68 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     }
   }, [folderKey, subpath, authHeaders, onUnauthorized, fetchFiles]);
 
+  // Breadcrumb: rename the current folder (last segment of subpath)
+  const handleRenameBreadcrumb = useCallback(async () => {
+    const trimmed = renameBreadcrumbValue.trim();
+    const segments = subpath.split('/');
+    const oldName = segments[segments.length - 1];
+    if (!trimmed || trimmed === oldName) { setRenamingBreadcrumb(false); return; }
+    const parentSubpath = segments.slice(0, -1).join('/');
+    setRenameBreadcrumbLoading(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rename-dir`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subpath: parentSubpath, oldName, newName: trimmed }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Rename failed' }));
+        setError(data.error || 'Rename failed');
+        return;
+      }
+      // Update subpath to reflect the new name
+      setSubpath([...segments.slice(0, -1), trimmed].join('/'));
+      setRenamingBreadcrumb(false);
+      setRenameBreadcrumbValue('');
+      fetchFiles();
+    } catch {
+      setError('Failed to rename folder');
+    } finally {
+      setRenameBreadcrumbLoading(false);
+    }
+  }, [folderKey, subpath, renameBreadcrumbValue, authHeaders, onUnauthorized, fetchFiles]);
+
+  // Breadcrumb: delete the current folder (last segment of subpath)
+  const handleDeleteBreadcrumb = useCallback(async () => {
+    const segments = subpath.split('/');
+    const dirName = segments[segments.length - 1];
+    const parentSubpath = segments.slice(0, -1).join('/');
+    setDeletingBreadcrumb(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rmdir`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subpath: parentSubpath, name: dirName }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Delete failed' }));
+        setError(data.error || 'Delete failed');
+        return;
+      }
+      // Navigate back to parent
+      setSubpath(parentSubpath);
+      setConfirmDeleteBreadcrumb(false);
+      setPage(1);
+      resetSelection();
+    } catch {
+      setError('Failed to delete folder');
+    } finally {
+      setDeletingBreadcrumb(false);
+    }
+  }, [folderKey, subpath, authHeaders, onUnauthorized, resetSelection]);
+
   const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
 
   const handleMoveToSubpath = useCallback(async (filenames: string[], targetDirName: string) => {
@@ -407,21 +480,18 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         return next;
       });
       if (previewFile && filenames.includes(previewFile)) {
-        setPreviewFile(null);
-        setVideoError(false);
-        setVideoRetryKey(0);
-        setTextContent(null);
+        closePreview();
       }
       fetchFiles();
     } catch {
       setError('Failed to move file');
     }
-  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles]);
+  }, [folderKey, subpath, authHeaders, onUnauthorized, previewFile, fetchFiles, closePreview]);
 
   const getSelectedFiles = useCallback(() => Array.from(selectedFiles), [selectedFiles]);
   const drag = useDragToFolder(handleMoveToSubpath, getSelectedFiles);
 
-  const pullRefresh = usePullToRefresh(useCallback(async () => { await fetchFiles(); }, [fetchFiles]));
+  const pullRefresh = usePullToRefresh(fetchFiles, drag.isDraggingRef);
 
   const mediaType = previewFile ? getMediaType(previewFile) : null;
 
@@ -566,7 +636,70 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
               <span key={i} className="flex items-center gap-1">
                 <ChevronRight className="w-4 h-4 text-th-text-faint" />
                 {i === arr.length - 1 ? (
-                  <span className="text-th-text font-medium">{segment}</span>
+                  renamingBreadcrumb ? (
+                    <span className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={renameBreadcrumbValue}
+                        onChange={(e) => setRenameBreadcrumbValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameBreadcrumb();
+                          if (e.key === 'Escape') { setRenamingBreadcrumb(false); setRenameBreadcrumbValue(''); }
+                        }}
+                        disabled={renameBreadcrumbLoading}
+                        className="px-2 py-0.5 text-sm border border-th-border rounded bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring min-w-0"
+                      />
+                      <button
+                        onClick={() => handleRenameBreadcrumb()}
+                        disabled={renameBreadcrumbLoading || !renameBreadcrumbValue.trim()}
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-purple-500/15 text-purple-600 hover:bg-purple-500/25 transition disabled:opacity-50"
+                      >
+                        {renameBreadcrumbLoading ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => { setRenamingBreadcrumb(false); setRenameBreadcrumbValue(''); }}
+                        className="px-2 py-0.5 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : confirmDeleteBreadcrumb ? (
+                    <span className="flex items-center gap-1">
+                      <span className="text-th-text font-medium">{segment}</span>
+                      <button
+                        onClick={() => handleDeleteBreadcrumb()}
+                        disabled={deletingBreadcrumb}
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-red-500/15 text-red-600 hover:bg-red-500/25 transition disabled:opacity-50"
+                      >
+                        {deletingBreadcrumb ? 'Deleting…' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteBreadcrumb(false)}
+                        className="px-2 py-0.5 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <span className="text-th-text font-medium">{segment}</span>
+                      <button
+                        onClick={() => { setRenamingBreadcrumb(true); setRenameBreadcrumbValue(segment); setConfirmDeleteBreadcrumb(false); }}
+                        className="p-1 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition"
+                        title="Rename folder"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => { setConfirmDeleteBreadcrumb(true); setRenamingBreadcrumb(false); }}
+                        className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
+                        title="Delete folder"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  )
                 ) : (
                   <button
                     onClick={() => handleBreadcrumbClick(i)}
@@ -590,9 +723,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         {/* Media viewer */}
         {previewFile && (
           <div className="mb-4 bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-th-bg-alt border-b border-th-border-light">
+            <div className="flex items-start justify-between px-4 py-2 bg-th-bg-alt border-b border-th-border-light">
               <span className="text-sm font-medium text-th-text-sub break-all">{previewFile}</span>
-              <button onClick={() => { setPreviewFile(null); setVideoError(false); setVideoRetryKey(0); setTextContent(null); }} className="text-th-text-faint hover:text-th-text-sub transition">
+              <button onClick={closePreview} className="text-th-text-faint hover:text-th-text-sub transition ml-2 mt-0.5 shrink-0">
                 <X className="w-4 h-4" />
               </button>
             </div>

@@ -22,12 +22,15 @@ export interface DragToFolderActions {
   fileRow: (filename: string) => Record<string, unknown>;
   dirRow: (dirName: string) => Record<string, unknown>;
   backRow: () => Record<string, unknown>;
+  isDraggingRef: React.RefObject<boolean>;
 }
 
 export function useDragToFolder(
   onMove: (filenames: string[], targetDirName: string | '..') => void,
   getSelectedFiles: () => string[],
 ): DragToFolderActions {
+  const isDraggingRef = useRef(false);
+
   // ── Touch state ────────────────────────────────────────────────────────────
   const touchState = useRef<{
     timer: ReturnType<typeof setTimeout> | null;
@@ -203,6 +206,7 @@ export function useDragToFolder(
     s.timer = setTimeout(() => {
       s.timer = null;
       s.dragging = true;
+      isDraggingRef.current = true;
 
       // Create ghost element
       const ghost = document.createElement('div');
@@ -270,6 +274,7 @@ export function useDragToFolder(
     }
 
     s.dragging = false;
+    isDraggingRef.current = false;
     s.filenames = [];
     stopTouchAutoScroll();
     removeGhost();
@@ -373,5 +378,5 @@ export function useDragToFolder(
     onDrop: (e: React.DragEvent) => onDrop('..', e),
   }), [onDragOver, onDragEnter, onDragLeave, onDrop]);
 
-  return { fileRow, dirRow, backRow };
+  return { fileRow, dirRow, backRow, isDraggingRef };
 }

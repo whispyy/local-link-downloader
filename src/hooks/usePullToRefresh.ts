@@ -9,7 +9,7 @@ interface PullToRefreshResult {
   refreshing: boolean;
 }
 
-export function usePullToRefresh(onRefresh: () => Promise<void>): PullToRefreshResult {
+export function usePullToRefresh(onRefresh: () => Promise<void>, isDraggingRef?: React.RefObject<boolean>): PullToRefreshResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,14 +39,17 @@ export function usePullToRefresh(onRefresh: () => Promise<void>): PullToRefreshR
     if (!el) return;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (window.scrollY > 0 || refreshingRef.current) return;
+      if (window.scrollY > 0 || refreshingRef.current || isDraggingRef?.current) return;
       startY.current = e.touches[0].clientY;
       pulling.current = true;
       currentDistance.current = 0;
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!pulling.current || refreshingRef.current) return;
+      if (!pulling.current || refreshingRef.current || isDraggingRef?.current) {
+        if (isDraggingRef?.current) { pulling.current = false; currentDistance.current = 0; }
+        return;
+      }
       const dy = e.touches[0].clientY - startY.current;
       if (dy > 0 && window.scrollY <= 0) {
         const distance = Math.min(MAX_PULL, dy * 0.5);
@@ -92,7 +95,7 @@ export function usePullToRefresh(onRefresh: () => Promise<void>): PullToRefreshR
       el.removeEventListener('touchend', onTouchEnd);
       if (rafId.current !== null) cancelAnimationFrame(rafId.current);
     };
-  }, [scheduleUpdate]);
+  }, [scheduleUpdate, isDraggingRef]);
 
   return { containerRef, pullDistance, refreshing };
 }

@@ -89,6 +89,15 @@ body {
   }
 }
 
+/* Hide scrollbar for horizontal scroll containers */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Drag-to-folder drop target highlight */
 .drop-target-highlight {
   background-color: rgba(147, 51, 234, 0.08) !important;

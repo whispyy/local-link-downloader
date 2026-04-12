@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList } from 'lucide-react';
 import { formatBytes, formatDate } from '../utils';
@@ -174,7 +174,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
     }
   }, [authHeaders, onUnauthorized]);
 
-  const pullRefresh = usePullToRefresh(useCallback(async () => { await fetchJobs(); }, [fetchJobs]));
+  const pullRefresh = usePullToRefresh(fetchJobs);
 
   useEffect(() => {
     fetchJobs();
@@ -184,14 +184,11 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
 
   const filtered = filter === 'all' ? jobs : jobs.filter((j) => j.status === filter);
 
-  const counts: Record<JobStatus | 'all', number> = {
-    all: jobs.length,
-    queued: jobs.filter((j) => j.status === 'queued').length,
-    downloading: jobs.filter((j) => j.status === 'downloading').length,
-    done: jobs.filter((j) => j.status === 'done').length,
-    error: jobs.filter((j) => j.status === 'error').length,
-    cancelled: jobs.filter((j) => j.status === 'cancelled').length,
-  };
+  const counts = useMemo(() => {
+    const c: Record<JobStatus | 'all', number> = { all: jobs.length, queued: 0, downloading: 0, done: 0, error: 0, cancelled: 0 };
+    for (const j of jobs) c[j.status]++;
+    return c;
+  }, [jobs]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
@@ -220,13 +217,13 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex gap-2 mb-4 flex-wrap">
+        {/* Filter tabs — horizontally scrollable on mobile */}
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-none">
           {STATUS_OPTIONS.map(({ value, label }) => (
             <button
               key={value}
               onClick={() => setFilter(value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition border whitespace-nowrap shrink-0 ${
                 filter === value
                   ? 'bg-th-btn text-th-btn-text border-th-btn'
                   : 'bg-th-bg text-th-text-sub border-th-border-light hover:bg-th-bg-alt'
@@ -259,14 +256,110 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
             No jobs{filter !== 'all' ? ` with status "${filter}"` : ''}.
           </div>
         ) : (
-          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
+          <>
+          {/* Mobile: card layout */}
+          <div className="sm:hidden space-y-2">
+            {filtered.map((job) => {
+              const expanded = expandedIds.has(job.id);
+              const canStop = job.status === 'queued' || job.status === 'downloading';
+              return (
+                <div
+                  key={job.id}
+                  className="bg-th-bg rounded-lg border border-th-border-light overflow-hidden"
+                  onClick={() => toggleExpand(job.id)}
+                >
+                  <div className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <StatusBadge status={job.status} />
+                      <div className="flex items-center gap-2">
+                        {canStop && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleStop(job.id); }}
+                            disabled={stoppingIds.has(job.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {stoppingIds.has(job.id)
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <StopCircle className="w-3 h-3" />}
+                            Stop
+                          </button>
+                        )}
+                        <ChevronDown className={`w-4 h-4 text-th-text-faint transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} />
+                      </div>
+                    </div>
+                    <p className="font-medium text-th-text-sub text-sm truncate" title={job.filename}>{job.filename}</p>
+                    <p className="text-xs text-th-text-faint mt-0.5">{job.folder_key}</p>
+                    {job.status === 'downloading' && job.total_bytes != null && job.total_bytes > 0 && (
+                      <div className="mt-2">
+                        <div className="h-1.5 rounded-full bg-th-bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-yellow-500 transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.round(((job.downloaded_bytes ?? 0) / job.total_bytes) * 100))}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-th-text-faint mt-1 block">
+                          <SizeCell job={job} />
+                        </span>
+                      </div>
+                    )}
+                    {job.status === 'downloading' && (job.total_bytes == null || job.total_bytes === 0) && job.downloaded_bytes != null && (
+                      <span className="text-xs text-th-text-faint mt-1 block">
+                        <SizeCell job={job} />
+                      </span>
+                    )}
+                    {job.status !== 'queued' && job.status !== 'downloading' && (job.downloaded_bytes != null || job.total_bytes != null) && (
+                      <span className="text-xs text-th-text-faint mt-1 block">
+                        <SizeCell job={job} />
+                      </span>
+                    )}
+                    {job.message && (
+                      <p className="text-xs text-th-text-faint mt-0.5 truncate" title={job.message}>
+                        {job.message}
+                      </p>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="px-4 py-2.5 bg-th-bg-alt border-t border-th-border-lighter">
+                      <div className="space-y-2 text-xs">
+                        <div>
+                          <span className="text-th-text-faint font-medium uppercase tracking-wide">URL</span>
+                          <a
+                            href={/^https?:\/\//i.test(job.url) ? job.url : '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-th-text-dim break-all mt-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {job.url}
+                          </a>
+                        </div>
+                        <div className="flex gap-4">
+                          <div>
+                            <span className="text-th-text-faint font-medium uppercase tracking-wide">Created</span>
+                            <p className="text-th-text-dim mt-0.5">{formatDate(job.created_at)}</p>
+                          </div>
+                          <div>
+                            <span className="text-th-text-faint font-medium uppercase tracking-wide">Updated</span>
+                            <p className="text-th-text-dim mt-0.5">{formatDate(job.updated_at)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop: table layout */}
+          <div className="hidden sm:block bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
-                  <th className="px-4 py-3 w-6 hidden sm:table-cell"></th>
+                  <th className="px-4 py-3 w-6"></th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Filename</th>
-                  <th className="px-4 py-3 hidden sm:table-cell">Folder</th>
+                  <th className="px-4 py-3">Folder</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-th-border-lighter">
@@ -275,8 +368,8 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                   const canStop = job.status === 'queued' || job.status === 'downloading';
                   return (
                     <React.Fragment key={job.id}>
-                      <tr className="hover:bg-th-bg-alt transition" onClick={() => toggleExpand(job.id)}>
-                        <td className="px-2 py-3 text-center hidden sm:table-cell">
+                      <tr className="hover:bg-th-bg-alt transition cursor-pointer" onClick={() => toggleExpand(job.id)}>
+                        <td className="px-2 py-3 text-center">
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleExpand(job.id); }}
                             title={expanded ? 'Collapse details' : 'Expand details'}
@@ -285,7 +378,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                             <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} />
                           </button>
                         </td>
-                        <td className="px-4 py-4 sm:py-3 whitespace-nowrap">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <StatusBadge status={job.status} />
                             {canStop && (
@@ -303,9 +396,8 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-4 sm:py-3">
+                        <td className="px-4 py-3">
                           <span className="font-medium text-th-text-sub">{job.filename}</span>
-                          <span className="text-xs text-th-text-faint sm:hidden block">{job.folder_key}</span>
                           {(job.status !== 'queued' && (job.downloaded_bytes != null || job.total_bytes != null)) && (
                             <span className="block text-xs text-th-text-faint mt-0.5">
                               <SizeCell job={job} />
@@ -317,13 +409,13 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden sm:table-cell">{job.folder_key}</td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap">{job.folder_key}</td>
                       </tr>
                       {expanded && (
                         <tr className="bg-th-bg-alt">
-                          <td colSpan={1} aria-hidden="true" className="hidden sm:table-cell" />
+                          <td colSpan={1} aria-hidden="true" />
                           <td colSpan={3} className="px-4 pb-3 pt-1">
-                            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
+                            <dl className="grid grid-cols-3 gap-x-6 gap-y-1 text-xs">
                               <div>
                                 <dt className="text-th-text-faint font-medium uppercase tracking-wide mb-0.5">URL</dt>
                                 <dd>
@@ -356,6 +448,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
       </div>
