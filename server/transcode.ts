@@ -25,6 +25,8 @@ interface CacheEntry {
   /** null = file is already compatible, serve original directly */
   tmpPath: string | null;
   ready: boolean;
+  /** true when ffmpeg exited non-zero; entry stays in cache until TTL for error reporting */
+  failed: boolean;
   promise: Promise<void>;
   lastAccess: number;
 }
@@ -155,6 +157,7 @@ function runFfmpeg(args: string[], log: LogFn): Promise<void> {
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const FAILED_CACHE_TTL_MS = 60 * 1000; // 1 minute (allows retry after failure)
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 const cache = new Map<string, CacheEntry>();
@@ -167,6 +170,11 @@ export function startCacheCleanup(log: LogFn) {
         cache.delete(key);
         if (entry.tmpPath) unlink(entry.tmpPath).catch(() => {});
         log('INFO', 'Cleaned up transcode cache', { key });
+      }
+      if (entry.failed && now - entry.lastAccess > FAILED_CACHE_TTL_MS) {
+        cache.delete(key);
+        if (entry.tmpPath) unlink(entry.tmpPath).catch(() => {});
+        log('INFO', 'Cleaned up failed transcode entry', { key });
       }
     }
   }, CLEANUP_INTERVAL_MS);
@@ -213,6 +221,65 @@ export function serveFileWithRanges(
   createReadStream(filePath).pipe(res);
 }
 
+// ─── Internal: ensure a cache entry exists (starts ffmpeg if needed) ─────────
+
+/**
+ * Ensures the file has a cache entry — probing and starting ffmpeg if not.
+ * Returns the entry without awaiting completion.
+ */
+async function ensureEntryExists(
+  fullPath: string,
+  filename: string,
+  log: LogFn,
+): Promise<CacheEntry> {
+  const cacheKey = path.resolve(fullPath);
+  const existing = cache.get(cacheKey);
+  if (existing) {
+    existing.lastAccess = Date.now();
+    return existing;
+  }
+
+  const probe = await probeFile(fullPath);
+
+  // If file is already a compatible MP4, cache a sentinel and serve original directly.
+  // We require MP4 specifically: Safari/iOS cannot play MKV, AVI, WebM, etc. even
+  // when the codecs are h264+aac. Non-MP4 files must be remuxed into an MP4 container.
+  const isAlreadyMp4 = path.extname(fullPath).toLowerCase() === '.mp4';
+  if (probe.canCopyVideo && probe.canCopyAudio && isAlreadyMp4) {
+    log('INFO', 'Serving original (already compatible MP4)', {
+      filename,
+      videoCodec: probe.videoCodec,
+      audioCodec: probe.audioCodec,
+    });
+    const sentinel: CacheEntry = { tmpPath: null, ready: true, failed: false, promise: Promise.resolve(), lastAccess: Date.now() };
+    cache.set(cacheKey, sentinel);
+    return sentinel;
+  }
+
+  log('INFO', 'Transcoding file', {
+    filename,
+    videoCodec: probe.videoCodec,
+    audioCodec: probe.audioCodec,
+  });
+
+  const tmpPath = path.join(os.tmpdir(), `lld-${randomUUID()}.mp4`);
+  const args = buildFfmpegArgs(fullPath, tmpPath, probe);
+  const promise = runFfmpeg(args, log);
+
+  const entry: CacheEntry = { tmpPath, ready: false, failed: false, promise, lastAccess: Date.now() };
+  cache.set(cacheKey, entry);
+
+  promise.then(() => {
+    entry.ready = true;
+    log('INFO', 'Transcode complete', { filename, tmpPath });
+  }).catch(() => {
+    entry.failed = true;
+    unlink(tmpPath).catch(() => {});
+  });
+
+  return entry;
+}
+
 // ─── Public: handle a stream request ─────────────────────────────────────────
 
 export async function handleStreamRequest(
@@ -223,49 +290,7 @@ export async function handleStreamRequest(
   log: LogFn,
 ): Promise<void> {
   const cacheKey = path.resolve(fullPath);
-  let entry = cache.get(cacheKey);
-
-  if (!entry) {
-    const probe = await probeFile(fullPath);
-
-    // If file is already a compatible MP4, cache a sentinel and serve original directly.
-    // We require MP4 specifically: Safari/iOS cannot play MKV, AVI, WebM, etc. even
-    // when the codecs are h264+aac. Non-MP4 files must be remuxed into an MP4 container.
-    const isAlreadyMp4 = path.extname(fullPath).toLowerCase() === '.mp4';
-    if (probe.canCopyVideo && probe.canCopyAudio && isAlreadyMp4) {
-      log('INFO', 'Serving original (already compatible MP4)', {
-        filename,
-        videoCodec: probe.videoCodec,
-        audioCodec: probe.audioCodec,
-      });
-      cache.set(cacheKey, { tmpPath: null, ready: true, promise: Promise.resolve(), lastAccess: Date.now() });
-      serveFileWithRanges(fullPath, req, res, 'video/mp4');
-      return;
-    }
-
-    log('INFO', 'Transcoding file', {
-      filename,
-      videoCodec: probe.videoCodec,
-      audioCodec: probe.audioCodec,
-    });
-
-    const tmpPath = path.join(os.tmpdir(), `lld-${randomUUID()}.mp4`);
-    const args = buildFfmpegArgs(fullPath, tmpPath, probe);
-    const promise = runFfmpeg(args, log);
-
-    entry = { tmpPath, ready: false, promise, lastAccess: Date.now() };
-    cache.set(cacheKey, entry);
-
-    promise.then(() => {
-      entry!.ready = true;
-      log('INFO', 'Transcode complete', { filename, tmpPath });
-    }).catch(() => {
-      cache.delete(cacheKey);
-      unlink(tmpPath).catch(() => {});
-    });
-  }
-
-  entry.lastAccess = Date.now();
+  const entry = await ensureEntryExists(fullPath, filename, log);
 
   // Sentinel: file is already a compatible MP4, serve original directly
   if (entry.tmpPath === null) {
@@ -273,14 +298,41 @@ export async function handleStreamRequest(
     return;
   }
 
+  // Bail out early if a previous attempt already failed
+  if (entry.failed) {
+    throw new Error('Transcode previously failed for this file');
+  }
+
   // Wait for transcoding to finish
   await entry.promise;
 
-  // Re-check: a concurrent failure may have deleted the cache entry and unlinked
-  // tmpPath between when this caller retrieved the entry and now.
-  if (!cache.has(cacheKey)) {
+  // Re-check: failure sets entry.failed; entry eviction is a secondary guard
+  if (entry.failed || !cache.has(cacheKey)) {
     throw new Error('Transcode failed (entry evicted during concurrent request)');
   }
 
-  serveFileWithRanges(entry.tmpPath, req, res);
+  serveFileWithRanges(entry.tmpPath!, req, res);
+}
+
+// ─── Public: start transcoding in background, return current status ──────────
+
+/**
+ * Starts transcoding in the background (fire-and-forget) and returns the
+ * current status immediately.  The legacy player polls this endpoint instead
+ * of opening a long-lived connection to /stream, which avoids iOS Safari's
+ * aggressive connection timeout on stalled responses.
+ */
+export async function getTranscodeStatus(
+  fullPath: string,
+  filename: string,
+  log: LogFn,
+): Promise<{ status: 'ready' | 'transcoding' | 'error' }> {
+  try {
+    const entry = await ensureEntryExists(fullPath, filename, log);
+    if (entry.failed) return { status: 'error' };
+    if (entry.tmpPath === null || entry.ready) return { status: 'ready' };
+    return { status: 'transcoding' };
+  } catch {
+    return { status: 'error' };
+  }
 }

@@ -16,7 +16,7 @@ import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
 import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
-import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './transcode';
+import { handleStreamRequest, serveFileWithRanges, startCacheCleanup, getTranscodeStatus } from './transcode';
 import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError, formatBytes } from './notifier';
 import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
@@ -1210,6 +1210,34 @@ export function buildApp() {
       log('ERROR', 'Stream failed', { filename, error: String(err) });
       if (!res.headersSent) res.status(500).json({ error: 'Transcoding failed' });
     }
+  });
+
+  // ── GET /api/browse/:folderKey/:filename/transcode ───────────────────────
+  // Non-blocking status endpoint used by the legacy player to avoid long-lived
+  // HTTP connections that iOS Safari times out before any data arrives.
+  // Starts transcoding in the background on first call; subsequent calls return
+  // the current status ('ready' | 'transcoding' | 'error').
+  app.get('/api/browse/:folderKey/:filename/transcode', authMiddlewareWithQuery, async (req, res) => {
+    if (process.env.ENABLE_TRANSCODING !== 'true') {
+      res.status(404).json({ error: 'Transcoding is not enabled' });
+      return;
+    }
+
+    const { folderKey, filename } = req.params;
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+    const result = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in result) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+
+    if (!existsSync(result.fullPath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const status = await getTranscodeStatus(result.fullPath, filename, log);
+    res.json(status);
   });
 
   // ── GET /api/browse/:folderKey/:filename ──────────────────────────────────
