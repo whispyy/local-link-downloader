@@ -81,6 +81,10 @@
     #video-el { width: 100%; display: block; background: black; }
     #audio-el { width: 100%; display: block; margin: 24px 0; }
     #player-info { padding: 10px 16px; font-size: 12px; color: #555; word-break: break-all; }
+    #tc-loading { padding: 40px 16px; text-align: center; color: #888; font-size: 14px; }
+    #tc-loading .tc-sub { font-size: 11px; margin-top: 6px; color: #555; }
+    #tc-error { padding: 40px 16px; text-align: center; color: #f87171; font-size: 14px; }
+    #tc-retry { margin-top: 12px; padding: 10px 22px; background: #1c1c1e; border: 1px solid #2c2c2e; border-radius: 8px; color: #4a9eff; font-size: 14px; cursor: pointer; }
 
     /* ── Image overlay ───────────────────────────────────────────────────── */
     #img-overlay {
@@ -147,8 +151,16 @@
       <div class="hdr-mid"><span id="player-title" class="hdr-title"></span></div>
     </div>
   </div>
-  <video id="video-el" controls preload="metadata" webkit-playsinline class="hidden"></video>
+  <video id="video-el" controls preload="metadata" webkit-playsinline playsinline class="hidden"></video>
   <audio id="audio-el" controls preload="metadata" class="hidden"></audio>
+  <div id="tc-loading" class="hidden">
+    <p>Transcoding&#8230;</p>
+    <p class="tc-sub">Converting to a format your device can play.<br>This may take a few minutes.</p>
+  </div>
+  <div id="tc-error" class="hidden">
+    <p id="tc-error-msg">Transcoding failed.</p>
+    <button id="tc-retry" class="hidden">Retry</button>
+  </div>
   <p id="player-info"></p>
 </div>
 
@@ -171,8 +183,11 @@
   var ALL_VIEWS  = ['v-login', 'v-folders', 'v-browse', 'v-player'];
 
   // ── App state ───────────────────────────────────────────────────────────────
-  var transcoding = false;
-  var navStack    = [];
+  var transcoding    = false;
+  var navStack       = [];
+  var tcTimer        = null; // transcode poll timer
+  var tcPolls        = 0;    // number of polls so far
+  var TC_MAX_POLLS   = 120;  // 120 × 3 s = 6 minutes max
 
   // ── Token ───────────────────────────────────────────────────────────────────
   function getToken()  { return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -239,18 +254,23 @@
   }
 
   // ── URL builders ────────────────────────────────────────────────────────────
-  function fileUrl(folderKey, subpath, filename) {
-    var u = '/api/browse/' + encodeURIComponent(folderKey) + '/' + encodeURIComponent(filename);
-    u += '?token=' + encodeURIComponent(getToken());
-    if (subpath) u += '&subpath=' + encodeURIComponent(subpath);
-    return u;
+  function mediaBase(folderKey, filename) {
+    return '/api/browse/' + encodeURIComponent(folderKey) + '/' + encodeURIComponent(filename);
+  }
+  function authSuffix(subpath) {
+    var s = '?token=' + encodeURIComponent(getToken());
+    if (subpath) s += '&subpath=' + encodeURIComponent(subpath);
+    return s;
   }
 
+  function fileUrl(folderKey, subpath, filename) {
+    return mediaBase(folderKey, filename) + authSuffix(subpath);
+  }
   function streamUrl(folderKey, subpath, filename) {
-    var u = '/api/browse/' + encodeURIComponent(folderKey) + '/' + encodeURIComponent(filename) + '/stream';
-    u += '?token=' + encodeURIComponent(getToken());
-    if (subpath) u += '&subpath=' + encodeURIComponent(subpath);
-    return u;
+    return mediaBase(folderKey, filename) + '/stream' + authSuffix(subpath);
+  }
+  function transcodeStatusUrl(folderKey, subpath, filename) {
+    return mediaBase(folderKey, filename) + '/transcode' + authSuffix(subpath);
   }
 
   // ── View switching ───────────────────────────────────────────────────────────
@@ -473,19 +493,106 @@
 
   el('browse-back').onclick = pop;
 
+  // ── Player helpers ───────────────────────────────────────────────────────────
+  function resetMedia() {
+    var video = el('video-el');
+    var audio = el('audio-el');
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    video.onerror = null;
+    audio.onerror = null;
+  }
+
+  function showTcLoading() {
+    show('tc-loading');
+    hide('tc-error');
+    addClass(el('video-el'), 'hidden');
+  }
+
+  function hideTcLoading() {
+    hide('tc-loading');
+  }
+
+  function showTcError(msg, retryFn) {
+    hide('tc-loading');
+    el('tc-error-msg').textContent = msg || 'Playback failed.';
+    var btn = el('tc-retry');
+    if (retryFn) {
+      btn.onclick = retryFn;
+      removeClass(btn, 'hidden');
+    } else {
+      addClass(btn, 'hidden');
+    }
+    show('tc-error');
+  }
+
+  function hideTcError() {
+    hide('tc-error');
+  }
+
+  function stopTcPolling() {
+    if (tcTimer !== null) { clearTimeout(tcTimer); tcTimer = null; }
+    tcPolls = 0;
+  }
+
+  function pollTranscode(folderKey, subpath, filename) {
+    if (tcPolls >= TC_MAX_POLLS) {
+      showTcError('Transcoding is taking too long. Please try again.', function() {
+        renderPlayer(folderKey, subpath, filename, 'video');
+      });
+      return;
+    }
+    tcPolls++;
+
+    apiGet(transcodeStatusUrl(folderKey, subpath, filename), function(err, data) {
+      if (err === 401 || err === 403) { onUnauth(); return; }
+      if (err || !data || data.status === 'error') {
+        showTcError('Transcoding failed. Please try again.', function() {
+          renderPlayer(folderKey, subpath, filename, 'video');
+        });
+        return;
+      }
+
+      if (data.status === 'ready') {
+        hideTcLoading();
+        var video = el('video-el');
+        video.onerror = function() {
+          showTcError('Failed to play transcoded video.', function() {
+            renderPlayer(folderKey, subpath, filename, 'video');
+          });
+          addClass(video, 'hidden');
+        };
+        video.src = streamUrl(folderKey, subpath, filename);
+        video.load();
+        removeClass(video, 'hidden');
+      } else {
+        // 'transcoding' — poll again after 3 s
+        tcTimer = setTimeout(function() {
+          tcTimer = null;
+          pollTranscode(folderKey, subpath, filename);
+        }, 3000);
+      }
+    });
+  }
+
   // ── Player ───────────────────────────────────────────────────────────────────
   function renderPlayer(folderKey, subpath, filename, mediaType) {
     showView('v-player');
     el('player-title').textContent = filename;
     el('player-info').textContent  = filename;
 
+    stopTcPolling();
+    hideTcLoading();
+    hideTcError();
+    resetMedia();
+
     var isAudio = mediaType === 'audio';
     var video   = el('video-el');
     var audio   = el('audio-el');
-
-    // Reset both elements before switching
-    video.pause(); video.src = '';
-    audio.pause(); audio.src = '';
 
     if (isAudio) {
       addClass(video, 'hidden');
@@ -494,19 +601,30 @@
       audio.load();
     } else {
       addClass(audio, 'hidden');
-      removeClass(video, 'hidden');
-      video.src = transcoding
-        ? streamUrl(folderKey, subpath, filename)
-        : fileUrl(folderKey, subpath, filename);
-      video.load();
+
+      if (!transcoding) {
+        // Serve original file directly — works for native-MP4 on iOS
+        video.onerror = function() {
+          showTcError('Failed to play video. The format may not be supported on this device.', null);
+          addClass(video, 'hidden');
+        };
+        video.src = fileUrl(folderKey, subpath, filename);
+        video.load();
+        removeClass(video, 'hidden');
+      } else {
+        // Transcoding enabled: poll status endpoint first to avoid the
+        // long-lived HTTP hang that iOS Safari times out.
+        showTcLoading();
+        pollTranscode(folderKey, subpath, filename);
+      }
     }
   }
 
   el('player-back').onclick = function() {
-    var video = el('video-el');
-    var audio = el('audio-el');
-    video.pause(); video.src = '';
-    audio.pause(); audio.src = '';
+    stopTcPolling();
+    hideTcLoading();
+    hideTcError();
+    resetMedia();
     pop();
   };
 
