@@ -45,12 +45,14 @@ export function sendJobNotification(
   filename: string,
   status: 'done' | 'error',
   message?: string,
+  type: 'download' | 'upload' = 'download',
 ): void {
   if (!('Notification' in window)) return;
   if (!getNotificationPreference()) return;
   if (Notification.permission !== 'granted') return;
 
-  const title = status === 'done' ? 'Download complete' : 'Download failed';
+  const label = type === 'upload' ? 'Upload' : 'Download';
+  const title = status === 'done' ? `${label} complete` : `${label} failed`;
   const body = status === 'done'
     ? filename
     : `${filename}${message ? ': ' + message : ''}`;

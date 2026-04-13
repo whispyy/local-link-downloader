@@ -122,8 +122,13 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       });
       if (response.status === 401) { onUnauthorized(); return; }
       const data = await response.json();
-      prevJobStatusRef.current = response.ok ? data.status : 'error';
+      const initialStatus = response.ok ? data.status : 'error';
+      prevJobStatusRef.current = initialStatus;
       setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start download' });
+      // If the job is already terminal in the submit response, notify immediately
+      if (response.ok && (initialStatus === 'done' || initialStatus === 'error')) {
+        sendJobNotification(data.filename || url, initialStatus, data.message);
+      }
     } catch (error) {
       setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
     } finally {
@@ -174,15 +179,15 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
         const data = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) {
           setCurrentJob((prev) => prev ? { ...prev, ...data, status: 'done', downloaded_bytes: prev.total_bytes } : prev);
-          sendJobNotification(uploadName, 'done');
+          sendJobNotification(uploadName, 'done', undefined, 'upload');
         } else {
           const msg = data.error || 'Upload failed';
           setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: msg } : prev);
-          sendJobNotification(uploadName, 'error', msg);
+          sendJobNotification(uploadName, 'error', msg, 'upload');
         }
       } catch {
         setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Invalid server response' } : prev);
-        sendJobNotification(uploadName, 'error', 'Invalid server response');
+        sendJobNotification(uploadName, 'error', 'Invalid server response', 'upload');
       }
     });
 
@@ -190,7 +195,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       xhrRef.current = null;
       setIsSubmitting(false);
       setCurrentJob((prev) => prev ? { ...prev, status: 'error', message: 'Network error' } : prev);
-      sendJobNotification(uploadName, 'error', 'Network error');
+      sendJobNotification(uploadName, 'error', 'Network error', 'upload');
     });
 
     xhr.open('POST', '/api/upload');
