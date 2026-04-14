@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { CheckCircle, XCircle, Clock, Loader2, RefreshCw, StopCircle, ChevronDown, ClipboardList } from 'lucide-react';
+import PageTitle from '../components/PageTitle';
 import { formatBytes, formatDate } from '../utils';
 import NavBar from '../components/NavBar';
 import { isTerminalTransition, sendJobNotification } from '../notifications';
@@ -197,10 +198,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
       <div className="p-4 sm:p-6" ref={pullRefresh.containerRef}>
       <PullToRefreshIndicator pullDistance={pullRefresh.pullDistance} refreshing={pullRefresh.refreshing} />
       <div className="max-w-5xl mx-auto">
-        {/* Page title */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <ClipboardList className="w-6 h-6 shrink-0 text-th-text-sub" />
-          <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Download Jobs</h1>
+        <PageTitle icon={ClipboardList} title="Download Jobs">
           <div className="flex items-center gap-2 ml-auto">
             {lastRefreshed && (
               <span className="text-xs text-th-text-faint whitespace-nowrap">
@@ -215,7 +213,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
               Refresh
             </button>
           </div>
-        </div>
+        </PageTitle>
 
         {/* Filter tabs — horizontally scrollable on mobile */}
         <div className="flex gap-2 mb-4 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-none">

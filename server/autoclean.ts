@@ -6,12 +6,14 @@
  * every 24 hours via setInterval.
  */
 
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir } from 'fs/promises';
 import path from 'path';
 
 const DATA_DIR = process.env.DATA_DIR || './data';
 const CONFIG_FILE = path.join(DATA_DIR, 'auto-clean.json');
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_CLEAN_DEPTH = 2; // only recurse 2 levels into each configured folder
 
 export type Rules = Record<string, number>;
 
@@ -22,6 +24,16 @@ interface AutoCleanConfig {
 export function ensureDataDir(): void {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+export function loadRulesSync(): Rules {
+  try {
+    const raw = readFileSync(CONFIG_FILE, 'utf-8');
+    const config: AutoCleanConfig = JSON.parse(raw);
+    return config.rules || {};
+  } catch {
+    return {};
   }
 }
 
@@ -63,7 +75,7 @@ async function walkAndClean(
     const fullPath = path.join(dirPath, entry.name);
     try {
       if (entry.isDirectory()) {
-        if (depth < 2) {
+        if (depth < MAX_CLEAN_DEPTH) {
           deleted += await walkAndClean(fullPath, maxAgeMs, now, log, depth + 1);
           // Try to remove directory if empty after cleanup
           try {
@@ -78,7 +90,7 @@ async function walkAndClean(
         if (now - fileStat.mtimeMs > maxAgeMs) {
           await unlink(fullPath);
           deleted++;
-          log('INFO', 'Auto-clean: deleted old file', { file: fullPath, ageDays: Math.round((now - fileStat.mtimeMs) / 86400000) });
+          log('INFO', 'Auto-clean: deleted old file', { file: fullPath, ageDays: Math.round((now - fileStat.mtimeMs) / MS_PER_DAY) });
         }
       }
     } catch (err) {
@@ -107,7 +119,7 @@ export async function runCleanup(
       continue;
     }
 
-    const maxAgeMs = maxDays * 86400000;
+    const maxAgeMs = maxDays * MS_PER_DAY;
     log('INFO', 'Auto-clean: scanning folder', { folderKey, maxDays });
     const deleted = await walkAndClean(folderPath, maxAgeMs, now, log, 0);
     if (deleted > 0) {
@@ -124,14 +136,12 @@ export interface AutoCleanHandle {
 export function startAutoClean(
   folderMapping: Map<string, string>,
   log: LogFn,
+  initialRules: Rules,
 ): AutoCleanHandle {
-  let currentRules: Rules = {};
+  let currentRules: Rules = initialRules;
 
-  // Load rules and run initial cleanup
-  loadRules().then((rules) => {
-    currentRules = rules;
-    return runCleanup(folderMapping, currentRules, log);
-  }).catch((err) => {
+  // Run initial cleanup with pre-loaded rules
+  runCleanup(folderMapping, currentRules, log).catch((err) => {
     log('ERROR', 'Auto-clean: initial run failed', { error: String(err) });
   });
 
@@ -140,7 +150,7 @@ export function startAutoClean(
     runCleanup(folderMapping, currentRules, log).catch((err) => {
       log('ERROR', 'Auto-clean: scheduled run failed', { error: String(err) });
     });
-  }, 24 * 60 * 60 * 1000);
+  }, MS_PER_DAY);
   interval.unref();
 
   return {
