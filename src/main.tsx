@@ -6,6 +6,7 @@ import QueuePage from './pages/QueuePage.tsx';
 import BrowsePage from './pages/BrowsePage.tsx';
 import LoginPage from './pages/LoginPage.tsx';
 import UsagePage from './pages/UsagePage.tsx';
+import SettingsPage from './pages/SettingsPage.tsx';
 import VersionBadge from './components/VersionBadge.tsx';
 import './index.css';
 
@@ -77,6 +78,10 @@ function Root() {
 
   if (hash === '#/usage') {
     return <><UsagePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+  }
+
+  if (hash === '#/settings') {
+    return <><SettingsPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
   return <><App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;

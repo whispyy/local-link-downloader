@@ -20,6 +20,7 @@ import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './t
 import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError, formatBytes } from './notifier';
 import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
+import { startAutoClean, saveRules, type AutoCleanHandle } from './autoclean';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1142,8 +1143,46 @@ export function buildApp() {
     }
   });
 
-  // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
+  // ── Auto-clean ─────────────────────────────────────────────────────────────
   startCacheCleanup(log);
+  const autoClean: AutoCleanHandle = startAutoClean(folderMapping, log);
+
+  // ── GET /api/auto-clean ─────────────────────────────────────────────────
+  app.get('/api/auto-clean', authMiddleware, (_req, res) => {
+    const folders = Array.from(folderMapping.keys());
+    res.json({ rules: autoClean.getRules(), folders });
+  });
+
+  // ── PUT /api/auto-clean ─────────────────────────────────────────────────
+  app.put('/api/auto-clean', authMiddleware, async (req, res) => {
+    const { rules } = req.body as { rules?: Record<string, number> };
+    if (!rules || typeof rules !== 'object') {
+      res.status(400).json({ error: 'Missing or invalid rules object' });
+      return;
+    }
+    // Validate folder keys and values
+    const folders = Array.from(folderMapping.keys());
+    const cleaned: Record<string, number> = {};
+    for (const [key, value] of Object.entries(rules)) {
+      if (!folders.includes(key)) {
+        res.status(400).json({ error: `Unknown folder key: ${key}` });
+        return;
+      }
+      const days = typeof value === 'number' ? Math.max(0, Math.floor(value)) : 0;
+      if (days > 0) cleaned[key] = days;
+    }
+    try {
+      await saveRules(cleaned);
+      autoClean.updateRules(cleaned);
+      log('INFO', 'Auto-clean rules updated', { rules: cleaned });
+      res.json({ ok: true, rules: cleaned });
+    } catch (err) {
+      log('ERROR', 'Failed to save auto-clean rules', { error: String(err) });
+      res.status(500).json({ error: 'Failed to save rules' });
+    }
+  });
+
+  // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
 
   app.get('/api/browse/:folderKey/:filename/stream', authMiddlewareWithQuery, async (req, res) => {
     if (process.env.ENABLE_TRANSCODING !== 'true') {

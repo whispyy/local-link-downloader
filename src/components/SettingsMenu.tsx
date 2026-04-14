@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus, RefreshCw } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus, RefreshCw, Trash2 } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   getNotificationStatus,
@@ -155,6 +155,15 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
           </button>
 
           {renderNotificationItem()}
+
+          <a
+            href="#/settings"
+            onClick={() => setOpen(false)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-th-text-sub hover:bg-th-bg-alt transition"
+          >
+            <Trash2 className="w-4 h-4" />
+            Auto-clean
+          </a>
 
           {authEnabled && (
             <>

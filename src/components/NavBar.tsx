@@ -1,7 +1,7 @@
 import { HardDrive } from 'lucide-react';
 import SettingsMenu from './SettingsMenu';
 
-export type NavPage = 'download' | 'browse' | 'queue' | 'usage';
+export type NavPage = 'download' | 'browse' | 'queue' | 'usage' | 'settings';
 
 interface NavBarProps {
   currentPage: NavPage;
@@ -15,11 +15,14 @@ const BASE_LINKS: { page: NavPage; href: string; label: string }[] = [
   { page: 'queue', href: '#/queue', label: 'Queue' },
 ];
 
-const ALL_LINKS = [...BASE_LINKS, { page: 'usage' as NavPage, href: '#/usage', label: 'Usage' }];
+const ALL_LINKS = [
+  ...BASE_LINKS,
+  { page: 'usage' as NavPage, href: '#/usage', label: 'Usage' },
+];
 
 export default function NavBar({ currentPage, authEnabled, onSignOut }: NavBarProps) {
   const maxWidth = currentPage === 'usage' ? 'max-w-6xl' : 'max-w-5xl';
-  const links = currentPage === 'usage' ? ALL_LINKS : BASE_LINKS;
+  const links = currentPage === 'usage' || currentPage === 'settings' ? ALL_LINKS : BASE_LINKS;
 
   return (
     <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
