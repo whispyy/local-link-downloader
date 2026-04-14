@@ -9,20 +9,14 @@ interface NavBarProps {
   onSignOut: () => void;
 }
 
-const BASE_LINKS: { page: NavPage; href: string; label: string }[] = [
+const LINKS: { page: NavPage; href: string; label: string }[] = [
   { page: 'download', href: '#', label: 'Download' },
   { page: 'browse', href: '#/browse', label: 'Browse' },
   { page: 'queue', href: '#/queue', label: 'Queue' },
 ];
 
-const ALL_LINKS = [
-  ...BASE_LINKS,
-  { page: 'usage' as NavPage, href: '#/usage', label: 'Usage' },
-];
-
 export default function NavBar({ currentPage, authEnabled, onSignOut }: NavBarProps) {
   const maxWidth = currentPage === 'usage' ? 'max-w-6xl' : 'max-w-5xl';
-  const links = currentPage === 'usage' || currentPage === 'settings' ? ALL_LINKS : BASE_LINKS;
 
   return (
     <header className="sticky top-0 z-50 bg-th-bg/80 backdrop-blur-md border-b border-th-border-light pwa-safe-top">
@@ -33,7 +27,7 @@ export default function NavBar({ currentPage, authEnabled, onSignOut }: NavBarPr
         </a>
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1 text-sm">
-            {links.map(({ page, href, label }) => (
+            {LINKS.map(({ page, href, label }) => (
               <a
                 key={page}
                 href={href}

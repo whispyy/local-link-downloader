@@ -1,6 +1,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil } from 'lucide-react';
+import PageTitle from '../components/PageTitle';
 import { formatBytes, formatDate, getMediaType } from '../utils';
 import NavBar from '../components/NavBar';
 import { useDragToFolder } from '../hooks/useDragToFolder';
@@ -502,11 +503,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       <div className="p-4 sm:p-6" ref={pullRefresh.containerRef}>
       <PullToRefreshIndicator pullDistance={pullRefresh.pullDistance} refreshing={pullRefresh.refreshing} />
       <div className="max-w-5xl mx-auto">
-        {/* Page title */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <Folder className="w-6 h-6 shrink-0 text-th-text-sub" />
-          <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Browse Files</h1>
-        </div>
+        <PageTitle icon={Folder} title="Browse Files" />
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 mb-4">

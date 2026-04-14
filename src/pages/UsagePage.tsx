@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
 import { Activity, Loader2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import PageTitle from '../components/PageTitle';
 import NavBar from '../components/NavBar';
 
 interface UsageEntry {
@@ -110,10 +111,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
 
       <div className="p-4 sm:p-6">
         <div className="max-w-6xl mx-auto">
-          {/* Page title */}
-          <div className="flex flex-wrap items-center gap-3 mb-6">
-            <Activity className="w-6 h-6 shrink-0 text-th-text-sub" />
-            <h1 className="text-xl sm:text-2xl font-semibold text-th-text">Usage Log</h1>
+          <PageTitle icon={Activity} title="Usage Log">
             <div className="flex items-center gap-2 ml-auto">
               <button
                 onClick={fetchUsage}
@@ -123,7 +121,7 @@ export default function UsagePage({ token, onUnauthorized, authEnabled }: UsageP
                 Refresh
               </button>
             </div>
-          </div>
+          </PageTitle>
 
           {/* Filters */}
           <div className="bg-th-bg rounded-lg border border-th-border-light p-3 sm:p-4 mb-4 space-y-3">

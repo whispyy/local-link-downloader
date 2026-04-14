@@ -20,7 +20,7 @@ import { handleStreamRequest, serveFileWithRanges, startCacheCleanup } from './t
 import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError, formatBytes } from './notifier';
 import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
-import { startAutoClean, saveRules, type AutoCleanHandle } from './autoclean';
+import { startAutoClean, loadRulesSync, saveRules, type AutoCleanHandle } from './autoclean';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1145,7 +1145,8 @@ export function buildApp() {
 
   // ── Auto-clean ─────────────────────────────────────────────────────────────
   startCacheCleanup(log);
-  const autoClean: AutoCleanHandle = startAutoClean(folderMapping, log);
+  const initialAutoCleanRules = loadRulesSync();
+  const autoClean: AutoCleanHandle = startAutoClean(folderMapping, log, initialAutoCleanRules);
 
   // ── GET /api/auto-clean ─────────────────────────────────────────────────
   app.get('/api/auto-clean', authMiddleware, (_req, res) => {
@@ -1161,10 +1162,9 @@ export function buildApp() {
       return;
     }
     // Validate folder keys and values
-    const folders = Array.from(folderMapping.keys());
     const cleaned: Record<string, number> = {};
     for (const [key, value] of Object.entries(rules)) {
-      if (!folders.includes(key)) {
+      if (!folderMapping.has(key)) {
         res.status(400).json({ error: `Unknown folder key: ${key}` });
         return;
       }
