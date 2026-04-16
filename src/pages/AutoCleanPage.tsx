@@ -4,7 +4,7 @@ import { Loader2, Save, Timer, Folder, CheckCircle } from 'lucide-react';
 import PageTitle from '../components/PageTitle';
 import NavBar from '../components/NavBar';
 
-interface SettingsPageProps {
+interface AutoCleanPageProps {
   token: string;
   onUnauthorized: () => void;
   authEnabled: boolean;
@@ -17,7 +17,7 @@ interface AutoCleanData {
 
 const PRESETS = [7, 14, 30, 60, 90];
 
-export default function SettingsPage({ token, onUnauthorized, authEnabled }: SettingsPageProps) {
+export default function AutoCleanPage({ token, onUnauthorized, authEnabled }: AutoCleanPageProps) {
   const headers = useAuthHeaders(token);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,7 +75,7 @@ export default function SettingsPage({ token, onUnauthorized, authEnabled }: Set
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
-      <NavBar currentPage="settings" authEnabled={authEnabled} onSignOut={onUnauthorized} />
+      <NavBar currentPage="autoclean" authEnabled={authEnabled} onSignOut={onUnauthorized} />
 
       <div className="p-4 sm:p-6">
         <div className="max-w-3xl mx-auto">

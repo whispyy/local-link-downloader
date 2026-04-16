@@ -1,7 +1,7 @@
 import { HardDrive } from 'lucide-react';
 import SettingsMenu from './SettingsMenu';
 
-export type NavPage = 'download' | 'browse' | 'queue' | 'usage' | 'settings';
+export type NavPage = 'download' | 'browse' | 'queue' | 'usage' | 'autoclean' | 'playlists';
 
 interface NavBarProps {
   currentPage: NavPage;

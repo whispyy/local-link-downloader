@@ -21,6 +21,12 @@ import { buildUsageTracker } from './usage';
 import { notifyDiscord, notifyDiscordError, formatBytes } from './notifier';
 import { isAuthEnabled, createSession, isValidSession, verifyPassword } from './auth';
 import { startAutoClean, loadRulesSync, saveRules, type AutoCleanHandle } from './autoclean';
+import {
+  runYtdlp, fetchVideoTitle, fetchPlaylistTitle,
+  loadPlaylistsSync, savePlaylists,
+  startPlaylistSync,
+  type Playlist, type PlaylistSyncHandle,
+} from './ytdlp';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,11 +44,18 @@ export interface DownloadJob {
   updatedAt: string;
   abortController?: AbortController;
   // Torrent-specific
-  type?: 'http' | 'torrent';
+  type?: 'http' | 'torrent' | 'ytdlp';
   peers?: number;
   downloadSpeed?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   torrentRef?: any;
+  // yt-dlp specific
+  ytdlpPercent?: number;
+  ytdlpSpeed?: string;
+  ytdlpEta?: string;
+  ytdlpPhase?: 'downloading' | 'postprocessing';
+  videoId?: string;
+  playlistId?: string;
 }
 
 // ─── WebTorrent client (lazy singleton) ──────────────────────────────────────
@@ -111,6 +124,19 @@ export function sanitizeFilename(filename: string): string {
     .replace(/[/\\]/g, '')
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .substring(0, 255);
+}
+
+/** Validates that a URL is external (http/https, not internal IP). Returns parsed URL or error string. */
+export function validateExternalUrl(raw: string): { url: URL } | { error: string } {
+  let parsed: URL;
+  try { parsed = new URL(raw); } catch { return { error: 'Invalid URL format' }; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: 'Only HTTP and HTTPS protocols are allowed' };
+  }
+  if (isInternalIP(parsed.hostname)) {
+    return { error: 'Internal/private IP addresses are not allowed' };
+  }
+  return { url: parsed };
 }
 
 /** Returns an error message string if the filename fails the allowlist, or null if it passes. */
@@ -289,6 +315,29 @@ async function downloadFile(
   }
 }
 
+function serializeJob(job: DownloadJob) {
+  return {
+    id: job.id,
+    url: job.url,
+    status: job.status,
+    message: job.message,
+    filename: job.filename,
+    folder_key: job.folderKey,
+    total_bytes: job.totalBytes,
+    downloaded_bytes: job.downloadedBytes,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt,
+    type: job.type,
+    peers: job.peers,
+    download_speed: job.downloadSpeed,
+    ytdlp_percent: job.ytdlpPercent,
+    ytdlp_speed: job.ytdlpSpeed,
+    ytdlp_eta: job.ytdlpEta,
+    ytdlp_phase: job.ytdlpPhase,
+    video_id: job.videoId,
+  };
+}
+
 const JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 function scheduleJobExpiry(jobs: Map<string, DownloadJob>, jobId: string): void {
@@ -422,23 +471,12 @@ export function buildApp() {
       return;
     }
 
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      res.status(400).json({ error: 'Invalid URL format' });
+    const urlCheck = validateExternalUrl(url);
+    if ('error' in urlCheck) {
+      res.status(400).json({ error: urlCheck.error });
       return;
     }
-
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      res.status(400).json({ error: 'Only HTTP and HTTPS protocols are allowed' });
-      return;
-    }
-
-    if (isInternalIP(parsedUrl.hostname)) {
-      res.status(400).json({ error: 'Internal/private IP addresses are not allowed' });
-      return;
-    }
+    const parsedUrl = urlCheck.url;
 
 
     if (!folderMapping.has(folderKey)) {
@@ -787,23 +825,7 @@ export function buildApp() {
     const allJobs = Array.from(jobs.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-    res.json(
-      allJobs.map((job) => ({
-        id: job.id,
-        url: job.url,
-        status: job.status,
-        message: job.message,
-        filename: job.filename,
-        folder_key: job.folderKey,
-        total_bytes: job.totalBytes,
-        downloaded_bytes: job.downloadedBytes,
-        created_at: job.createdAt,
-        updated_at: job.updatedAt,
-        type: job.type,
-        peers: job.peers,
-        download_speed: job.downloadSpeed,
-      })),
-    );
+    res.json(allJobs.map(serializeJob));
   });
 
   // ── DELETE /api/jobs/:jobId ─────────────────────────────────────────────────
@@ -822,6 +844,7 @@ export function buildApp() {
     job.message = 'Download cancelled';
     job.updatedAt = new Date().toISOString();
     if (job.abortController) job.abortController.abort();
+    // yt-dlp: no scheduleJobExpiry here — the async runYtdlp callback handles it
     if (job.type === 'torrent' && job.torrentRef) {
       job.torrentRef.destroy();
       job.torrentRef = undefined;
@@ -839,20 +862,7 @@ export function buildApp() {
       res.status(404).json({ error: 'Job not found' });
       return;
     }
-    res.json({
-      id: job.id,
-      status: job.status,
-      message: job.message,
-      filename: job.filename,
-      folder_key: job.folderKey,
-      total_bytes: job.totalBytes,
-      downloaded_bytes: job.downloadedBytes,
-      created_at: job.createdAt,
-      updated_at: job.updatedAt,
-      type: job.type,
-      peers: job.peers,
-      download_speed: job.downloadSpeed,
-    });
+    res.json(serializeJob(job));
   });
 
   // ── MIME type map ──────────────────────────────────────────────────────────
@@ -1180,6 +1190,340 @@ export function buildApp() {
       log('ERROR', 'Failed to save auto-clean rules', { error: String(err) });
       res.status(500).json({ error: 'Failed to save rules' });
     }
+  });
+
+  // ── POST /api/ytdlp ────────────────────────────────────────────────────────
+  app.post('/api/ytdlp', authMiddleware, async (req, res) => {
+    const { url, folderKey, format } = req.body as {
+      url?: string;
+      folderKey?: string;
+      format?: 'video' | 'audio';
+    };
+
+    if (!url || !folderKey) {
+      res.status(400).json({ error: 'Missing required fields: url and folderKey' });
+      return;
+    }
+
+    const ytdlpUrlCheck = validateExternalUrl(url);
+    if ('error' in ytdlpUrlCheck) {
+      res.status(400).json({ error: ytdlpUrlCheck.error });
+      return;
+    }
+
+    if (format !== 'video' && format !== 'audio') {
+      res.status(400).json({ error: 'format must be "video" or "audio"' });
+      return;
+    }
+    if (!folderMapping.has(folderKey)) {
+      res.status(400).json({ error: `Invalid folder key: ${folderKey}` });
+      return;
+    }
+
+    const destinationFolder = folderMapping.get(folderKey)!;
+    const jobId = launchYtdlpJob({ url, folderKey, destinationFolder, format });
+    res.json({ id: jobId, status: 'queued', type: 'ytdlp' });
+  });
+
+  // ── Shared yt-dlp job launcher ────────────────────────────────────────────
+  function launchYtdlpJob(opts: {
+    url: string;
+    folderKey: string;
+    destinationFolder: string;
+    format: 'video' | 'audio';
+    videoId?: string;
+    playlistId?: string;
+  }): string {
+    const { url, folderKey, destinationFolder, format, videoId, playlistId } = opts;
+
+    if (!existsSync(destinationFolder)) {
+      mkdirSync(destinationFolder, { recursive: true });
+    }
+
+    const jobId = randomUUID();
+    const now = new Date().toISOString();
+    const abortController = new AbortController();
+
+    const job: DownloadJob = {
+      id: jobId,
+      url,
+      folderKey,
+      filename: '',
+      destPath: destinationFolder,
+      status: 'queued',
+      type: 'ytdlp',
+      videoId,
+      playlistId,
+      createdAt: now,
+      updatedAt: now,
+      abortController,
+    };
+
+    jobs.set(jobId, job);
+    log('INFO', 'yt-dlp job created', { jobId, url, folderKey, format, videoId });
+    notifyDiscord(`🎬 yt-dlp ${format} download started → \`${folderKey}\``);
+
+    setImmediate(() => {
+      (async () => {
+        const j = jobs.get(jobId);
+        if (!j || j.status === 'cancelled') {
+          if (j) scheduleJobExpiry(jobs, jobId);
+          return;
+        }
+
+        // Resolve video title before starting download
+        const title = await fetchVideoTitle(url);
+        if (abortController.signal.aborted) {
+          j.status = 'cancelled';
+          j.message = 'Download cancelled';
+          if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, cancelled: true });
+          scheduleJobExpiry(jobs, jobId);
+          return;
+        }
+        if (title) {
+          j.filename = title;
+          j.updatedAt = new Date().toISOString();
+        }
+
+        j.status = 'downloading';
+        j.ytdlpPhase = 'downloading';
+        j.updatedAt = new Date().toISOString();
+
+        const result = await runYtdlp(url, destinationFolder, format, abortController.signal, (progress) => {
+          const jj = jobs.get(jobId);
+          if (!jj) return;
+          jj.ytdlpPercent = progress.percent;
+          jj.ytdlpSpeed = progress.speed;
+          jj.ytdlpEta = progress.eta;
+          jj.ytdlpPhase = progress.phase;
+          jj.updatedAt = new Date().toISOString();
+        });
+
+        j.updatedAt = new Date().toISOString();
+        j.abortController = undefined;
+
+        if (result.cancelled) {
+          j.status = 'cancelled';
+          j.message = 'Download cancelled';
+          log('INFO', 'yt-dlp download cancelled', { jobId });
+          // Clean up partial files left by yt-dlp, scoped to this job's filename only
+          if (result.filename) {
+            const toDelete = [
+              result.filename,
+              result.filename + '.part',
+              result.filename + '.ytdl',
+            ];
+            const deleted: string[] = [];
+            for (const f of toDelete) {
+              const fp = path.join(destinationFolder, f);
+              try {
+                await unlink(fp);
+                deleted.push(f);
+              } catch {
+                // file doesn't exist or already removed — ignore
+              }
+            }
+            if (deleted.length > 0) {
+              log('INFO', 'yt-dlp cancelled: cleaned up partial files', { jobId, files: deleted });
+            }
+          }
+          if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, cancelled: true, title: j.filename || undefined });
+        } else if (result.success) {
+          j.status = 'done';
+          j.filename = result.filename || j.filename || 'unknown';
+          j.message = `Downloaded to ${destinationFolder}`;
+          log('INFO', 'yt-dlp download completed', { jobId, filename: j.filename });
+          notifyDiscord(`✅ yt-dlp completed: **${j.filename}** → \`${folderKey}\``);
+          if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: true, title: j.filename || undefined });
+        } else {
+          j.status = 'error';
+          j.message = result.message;
+          log('ERROR', 'yt-dlp download failed', { jobId, error: result.message });
+          if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, error: result.message, title: j.filename || undefined });
+        }
+
+        scheduleJobExpiry(jobs, jobId);
+      })().catch((err) => {
+        log('ERROR', 'yt-dlp job unexpected error', { jobId, error: String(err) });
+        const j = jobs.get(jobId);
+        if (j) {
+          j.status = 'error';
+          j.message = `Unexpected error: ${err}`;
+          j.abortController = undefined;
+          scheduleJobExpiry(jobs, jobId);
+        }
+        if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, error: String(err) });
+      });
+    });
+
+    return jobId;
+  }
+
+  // ── Playlist sync ─────────────────────────────────────────────────────────
+  const initialPlaylists = loadPlaylistsSync();
+  const playlistSync: PlaylistSyncHandle = startPlaylistSync(
+    folderMapping,
+    log,
+    initialPlaylists,
+    (videoId, playlistId, _playlistUrl, folderKey, format) => {
+      const destinationFolder = folderMapping.get(folderKey);
+      if (!destinationFolder) return '';
+      const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      return launchYtdlpJob({ url: videoUrl, folderKey, destinationFolder, format, videoId, playlistId });
+    },
+  );
+
+  // ── GET /api/playlists ──────────────────────────────────────────────────────
+  app.get('/api/playlists', authMiddleware, (_req, res) => {
+    const folders = Array.from(folderMapping.keys());
+    res.json({ playlists: playlistSync.getPlaylists(), folders });
+  });
+
+  // ── PUT /api/playlists ──────────────────────────────────────────────────────
+  app.put('/api/playlists', authMiddleware, async (req, res) => {
+    const { playlists } = req.body as { playlists?: Playlist[] };
+    if (!Array.isArray(playlists)) {
+      res.status(400).json({ error: 'Missing or invalid playlists array' });
+      return;
+    }
+    // Validate each playlist
+    for (const pl of playlists) {
+      if (!pl.url || !pl.folderKey || !pl.format) {
+        res.status(400).json({ error: 'Each playlist must have url, folderKey, and format' });
+        return;
+      }
+      const plUrlCheck = validateExternalUrl(pl.url);
+      if ('error' in plUrlCheck) {
+        res.status(400).json({ error: plUrlCheck.error });
+        return;
+      }
+      if (!folderMapping.has(pl.folderKey)) {
+        res.status(400).json({ error: `Unknown folder key: ${pl.folderKey}` });
+        return;
+      }
+      if (pl.format !== 'video' && pl.format !== 'audio') {
+        res.status(400).json({ error: 'format must be "video" or "audio"' });
+        return;
+      }
+      if (typeof pl.syncIntervalHours !== 'number' || pl.syncIntervalHours < 1) {
+        res.status(400).json({ error: 'syncIntervalHours must be a number >= 1' });
+        return;
+      }
+    }
+    try {
+      // Merge server-side videoStatuses so a stale client doesn't erase sync progress
+      const current = playlistSync.getPlaylists();
+      const serverStatuses = new Map(current.map((p) => [p.id, p.videoStatuses]));
+      for (const pl of playlists) {
+        const existing = serverStatuses.get(pl.id);
+        if (existing) {
+          // Server-side statuses win for any video the server knows about
+          pl.videoStatuses = { ...pl.videoStatuses, ...existing };
+        }
+        if (!pl.videoStatuses) pl.videoStatuses = {};
+      }
+
+      // Preserve titles already resolved server-side
+      const currentTitles = new Map(current.map((p) => [p.id, p.title]));
+      for (const pl of playlists) {
+        if (!pl.title && currentTitles.get(pl.id)) {
+          pl.title = currentTitles.get(pl.id);
+        }
+      }
+
+      await savePlaylists(playlists);
+      playlistSync.updatePlaylists(playlists);
+      log('INFO', 'Playlists updated', { count: playlists.length });
+      res.json({ ok: true, playlists });
+
+      // Resolve titles in the background for playlists that don't have one yet
+      const untitled = playlists.filter((pl) => !pl.title);
+      if (untitled.length > 0) {
+        (async () => {
+          for (const pl of untitled) {
+            const title = await fetchPlaylistTitle(pl.url);
+            if (title) {
+              pl.title = title;
+              log('INFO', 'Resolved playlist title', { playlistId: pl.id, title });
+            }
+          }
+          await savePlaylists(playlistSync.getPlaylists());
+        })().catch((err) => log('ERROR', 'Failed to resolve playlist titles', { error: String(err) }));
+      }
+    } catch (err) {
+      log('ERROR', 'Failed to save playlists', { error: String(err) });
+      res.status(500).json({ error: 'Failed to save playlists' });
+    }
+  });
+
+  // ── POST /api/playlists/sync ────────────────────────────────────────────────
+  app.post('/api/playlists/sync', authMiddleware, async (req, res) => {
+    const { playlistId } = req.body as { playlistId?: string };
+    try {
+      if (playlistId) {
+        await playlistSync.syncPlaylist(playlistId);
+      } else {
+        await playlistSync.syncAll();
+      }
+      res.json({ ok: true, playlists: playlistSync.getPlaylists() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ── GET /api/playlists/:playlistId/videos ──────────────────────────────────
+  app.get('/api/playlists/:playlistId/videos', authMiddleware, (req, res) => {
+    const pl = playlistSync.getPlaylists().find((p) => p.id === req.params.playlistId);
+    if (!pl) { res.status(404).json({ error: 'Playlist not found' }); return; }
+
+    const videos = Object.entries(pl.videoStatuses).map(([videoId, vs]) => {
+      let liveProgress: { percent?: number; speed?: string; eta?: string; phase?: string } | undefined;
+      if (vs.jobId && vs.status === 'downloading') {
+        const job = jobs.get(vs.jobId);
+        if (job) {
+          liveProgress = {
+            percent: job.ytdlpPercent,
+            speed: job.ytdlpSpeed,
+            eta: job.ytdlpEta,
+            phase: job.ytdlpPhase,
+          };
+        }
+      }
+      return { videoId, ...vs, liveProgress };
+    });
+
+    res.json({ playlistId: pl.id, videos });
+  });
+
+  // ── POST /api/playlists/:playlistId/retry ─────────────────────────────────
+  app.post('/api/playlists/:playlistId/retry', authMiddleware, async (req, res) => {
+    const pl = playlistSync.getPlaylists().find((p) => p.id === req.params.playlistId);
+    if (!pl) { res.status(404).json({ error: 'Playlist not found' }); return; }
+
+    const { videoIds } = req.body as { videoIds?: string[] };
+    const toRetry = videoIds || Object.entries(pl.videoStatuses)
+      .filter(([, v]) => v.status === 'failed' || v.status === 'cancelled')
+      .map(([id]) => id);
+
+    const destinationFolder = folderMapping.get(pl.folderKey);
+    if (!destinationFolder) { res.status(400).json({ error: 'Unknown folder' }); return; }
+
+    let retried = 0;
+    for (const vid of toRetry) {
+      const vs = pl.videoStatuses[vid];
+      if (!vs || (vs.status !== 'failed' && vs.status !== 'cancelled')) continue;
+      const videoUrl = `https://www.youtube.com/watch?v=${vid}`;
+      const jobId = launchYtdlpJob({ url: videoUrl, folderKey: pl.folderKey, destinationFolder, format: pl.format, videoId: vid, playlistId: pl.id });
+      vs.status = 'downloading';
+      vs.jobId = jobId;
+      vs.lastAttemptAt = new Date().toISOString();
+      vs.error = undefined;
+      retried++;
+    }
+
+    await savePlaylists(playlistSync.getPlaylists());
+    res.json({ ok: true, retried, playlists: playlistSync.getPlaylists() });
   });
 
   // ── GET /api/browse/:folderKey/:filename/stream ───────────────────────────
