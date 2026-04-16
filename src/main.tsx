@@ -37,7 +37,10 @@ function Root() {
         }
       })
       .catch(() => {
-        // Server unreachable — show login page anyway
+        // Server unreachable — grant offline-only access so the user
+        // can still browse content saved in IndexedDB.
+        // Do NOT persist to localStorage — a reload should re-probe the server.
+        setToken('offline');
       })
       .finally(() => setAuthChecked(true));
   }, [token]);
@@ -67,7 +70,7 @@ function Root() {
     return <><LoginPage onSuccess={handleLogin} /><VersionBadge /></>;
   }
 
-  const authEnabled = token !== 'no-auth';
+  const authEnabled = token !== 'no-auth' && token !== 'offline';
 
   if (hash === '#/queue') {
     return <><QueuePage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;

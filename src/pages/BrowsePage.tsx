@@ -1,12 +1,19 @@
-import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil, WifiOff, CloudDownload, Loader2 } from 'lucide-react';
 import PageTitle from '../components/PageTitle';
 import { formatBytes, formatDate, getMediaType } from '../utils';
 import NavBar from '../components/NavBar';
 import { useDragToFolder } from '../hooks/useDragToFolder';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
+import { useOfflineStore, OfflineFileMeta } from '../hooks/useOfflineStore';
+
+const OFFLINE_FOLDER_KEY = '__offline__';
+
+function truncateText(text: string, limit = 512_000): string {
+  return text.length > limit ? text.slice(0, limit) + '\n\n… (truncated)' : text;
+}
 
 interface BrowseFile {
   name: string;
@@ -74,6 +81,31 @@ function MediaIcon({ filename }: { filename: string }) {
   }
 }
 
+interface OfflineButtonProps {
+  isSaving: boolean;
+  isOffline: boolean;
+  onSave: () => void;
+  onRemove: () => void;
+  compact?: boolean; // true = desktop icon-only, false = mobile with labels
+}
+
+function OfflineButton({ isSaving, isOffline, onSave, onRemove, compact = false }: OfflineButtonProps) {
+  const icon = compact ? 'w-4 h-4' : 'w-3.5 h-3.5';
+  if (isSaving) {
+    return compact
+      ? <span className="p-1.5" title="Saving offline…"><Loader2 className={`${icon} animate-spin text-green-500`} /></span>
+      : <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-green-500"><Loader2 className={`${icon} animate-spin`} />Saving…</span>;
+  }
+  if (isOffline) {
+    return compact
+      ? <button onClick={onRemove} className="p-1.5 rounded text-green-500 hover:text-green-600 hover:bg-green-500/15 transition" title="Remove from offline"><WifiOff className={icon} /></button>
+      : <button onClick={onRemove} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-green-600 bg-th-bg border border-green-500/20 transition"><WifiOff className={icon} />Offline</button>;
+  }
+  return compact
+    ? <button onClick={onSave} className="p-1.5 rounded text-th-text-faint hover:text-green-500 hover:bg-green-500/10 transition" title="Save for offline"><CloudDownload className={icon} /></button>
+    : <button onClick={onSave} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition"><CloudDownload className={icon} />Save Offline</button>;
+}
+
 
 export default function BrowsePage({ token, onUnauthorized, authEnabled }: BrowsePageProps) {
   const [folders, setFolders] = useState<string[]>([]);
@@ -112,6 +144,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [confirmDeleteDir, setConfirmDeleteDir] = useState<string | null>(null);
   const [deletingDir, setDeletingDir] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [isOfflineFolder, setIsOfflineFolder] = useState(false);
+  const offline = useOfflineStore();
+  const [offlinePreviewUrl, setOfflinePreviewUrl] = useState<string | null>(null);
   const [renamingBreadcrumb, setRenamingBreadcrumb] = useState(false);
   const [renameBreadcrumbValue, setRenameBreadcrumbValue] = useState('');
   const [renameBreadcrumbLoading, setRenameBreadcrumbLoading] = useState(false);
@@ -134,9 +169,16 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const authHeaders = useAuthHeaders(token);
 
   useEffect(() => {
+    // When the server was unreachable at boot, token is 'offline' —
+    // skip all API calls and go straight to the offline folder.
+    if (token === 'offline') {
+      setIsOfflineFolder(true);
+      return;
+    }
     fetch('/api/config', { headers: authHeaders })
       .then(res => {
         if (res.status === 401) { onUnauthorized(); return null; }
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
         return res.json();
       })
       .then(data => {
@@ -148,8 +190,16 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         setTranscodingAvailable(tc);
         setTranscoding(tc);
       })
-      .catch(() => setError('Could not load configuration'));
-  }, [authHeaders, onUnauthorized]);
+      .catch((err) => {
+        if (err instanceof TypeError) {
+          // Network error (server unreachable) — fall back to offline-only mode
+          setIsOfflineFolder(true);
+        } else {
+          // Server error (5xx, bad JSON, etc.) — show error to user
+          setError(err.message || 'Could not load configuration');
+        }
+      });
+  }, [token, authHeaders, onUnauthorized]);
 
   const fetchFiles = useCallback(async () => {
     if (!folderKey) return;
@@ -176,17 +226,19 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     fetchFiles();
   }, [fetchFiles]);
 
-  const totalPages = Math.max(1, Math.ceil(total / limit));
+  // totalPages is calculated below, after offlineFileList is built
 
   const subpathParam = subpath ? `&subpath=${encodeURIComponent(subpath)}` : '';
 
-  const fileUrl = (filename: string) =>
-    `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`;
+  const fileUrl = useCallback((filename: string) =>
+    `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
+    [folderKey, token, subpathParam]);
 
-  const videoSrc = (filename: string) =>
+  const videoSrc = useCallback((filename: string) =>
     transcoding
       ? `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}/stream?token=${encodeURIComponent(token)}${subpathParam}`
-      : fileUrl(filename);
+      : fileUrl(filename),
+    [transcoding, folderKey, token, subpathParam, fileUrl]);
 
   const resetSelection = useCallback(() => {
     setSelectedFiles(new Set());
@@ -195,6 +247,15 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   }, [closePreview]);
 
   const handleFolderChange = (key: string) => {
+    if (key === OFFLINE_FOLDER_KEY) {
+      setIsOfflineFolder(true);
+      setFolderKey('');
+      setSubpath('');
+      setPage(1);
+      resetSelection();
+      return;
+    }
+    setIsOfflineFolder(false);
     setFolderKey(key);
     setSubpath('');
     setPage(1);
@@ -206,11 +267,10 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       // Shift+click: select range
       const start = Math.min(lastClickedIdx.current, fileIndex);
       const end = Math.max(lastClickedIdx.current, fileIndex);
-      const rangeNames = files.slice(start, end + 1).map(f => f.name);
+      const currentFiles = isOfflineFolder ? offline.offlineFiles.map(f => f.key) : files.map(f => f.name);
+      const rangeNames = currentFiles.slice(start, end + 1);
       setSelectedFiles(new Set(rangeNames));
-      // Don't update lastClickedIdx on shift-click (anchor stays)
     } else {
-      // Normal click: single select
       setSelectedFiles(new Set([filename]));
       lastClickedIdx.current = fileIndex;
     }
@@ -223,20 +283,38 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     const type = getMediaType(filename);
     if (type === 'text') {
       setTextLoading(true);
-      fetch(
-        `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
-      )
-        .then(res => {
-          if (res.ok) return res.text();
-          throw new Error();
-        })
-        .then(text => {
-          setTextContent(text.length > 512_000 ? text.slice(0, 512_000) + '\n\n… (truncated)' : text);
-        })
-        .catch(() => setTextContent('Failed to load file content.'))
-        .finally(() => setTextLoading(false));
+      if (isOfflineFolder) {
+        // Load text content from offline blob
+        const meta = offline.offlineFiles.find(f => f.key === filename);
+        if (meta) {
+          offline.getOfflineUrl(meta.folderKey, meta.subpath, meta.name)
+            .then(url => url ? fetch(url) : Promise.reject())
+            .then(res => res.text())
+            .then(text => {
+              setTextContent(truncateText(text));
+            })
+            .catch(() => setTextContent('Failed to load offline file content.'))
+            .finally(() => setTextLoading(false));
+        } else {
+          setTextContent('File not found in offline store.');
+          setTextLoading(false);
+        }
+      } else {
+        fetch(
+          `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
+        )
+          .then(res => {
+            if (res.ok) return res.text();
+            throw new Error();
+          })
+          .then(text => {
+            setTextContent(truncateText(text));
+          })
+          .catch(() => setTextContent('Failed to load file content.'))
+          .finally(() => setTextLoading(false));
+      }
     }
-  }, [files, folderKey, subpathParam, token]);
+  }, [files, folderKey, subpathParam, token, isOfflineFolder, offline]);
 
   const handleDelete = useCallback(async (filename: string) => {
     setDeleting(true);
@@ -496,6 +574,55 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   const mediaType = previewFile ? getMediaType(previewFile) : null;
 
+  // Build offline file list when viewing the offline pseudo-folder
+  // Use the composite key (folderKey/subpath/name) as the display name to avoid collisions
+  const offlineFileList = useMemo<BrowseFile[]>(() =>
+    isOfflineFolder
+      ? offline.offlineFiles.map((f: OfflineFileMeta) => ({ name: f.key, size: f.size, modifiedAt: f.savedAt }))
+      : [],
+    [isOfflineFolder, offline.offlineFiles]);
+  const offlineFileMeta = useMemo<Map<string, OfflineFileMeta>>(() =>
+    isOfflineFolder
+      ? new Map(offline.offlineFiles.map(f => [f.key, f]))
+      : new Map(),
+    [isOfflineFolder, offline.offlineFiles]);
+
+  const displayFiles = isOfflineFolder ? offlineFileList : files;
+  const displayDirs = isOfflineFolder ? [] : dirs;
+  const displayTotal = isOfflineFolder ? offlineFileList.length : total;
+  const totalPages = Math.max(1, Math.ceil(displayTotal / limit));
+
+  // Resolve preview URL: offline blob or server
+  const previewSrc = useCallback(async (filename: string, type: 'file' | 'video'): Promise<string> => {
+    if (isOfflineFolder) {
+      const meta = offlineFileMeta.get(filename);
+      if (meta) {
+        const url = await offline.getOfflineUrl(meta.folderKey, meta.subpath, meta.name);
+        if (url) return url;
+      }
+    }
+    return type === 'video' ? videoSrc(filename) : fileUrl(filename);
+  }, [isOfflineFolder, offlineFileMeta, offline, videoSrc, fileUrl]);
+
+  // Load offline preview URL when preview changes
+  useEffect(() => {
+    if (!previewFile || !isOfflineFolder) {
+      setOfflinePreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    const mt = getMediaType(previewFile);
+    previewSrc(previewFile, mt === 'video' ? 'video' : 'file').then(url => {
+      if (!cancelled) setOfflinePreviewUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [previewFile, isOfflineFolder, previewSrc]);
+
+  const getPreviewUrl = (filename: string, type: 'file' | 'video'): string | null => {
+    if (isOfflineFolder) return offlinePreviewUrl;
+    return type === 'video' ? videoSrc(filename) : fileUrl(filename);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-th-grad-from to-th-grad-to">
       <NavBar currentPage="browse" authEnabled={authEnabled} onSignOut={onUnauthorized} />
@@ -508,29 +635,34 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
           {/* Left: folder selector + free space */}
-          {folders.length > 0 && (
+          {(folders.length > 0 || isOfflineFolder) && (
             <div className="flex items-center gap-2 mr-auto">
               <select
-                value={folderKey}
+                value={isOfflineFolder ? OFFLINE_FOLDER_KEY : folderKey}
                 onChange={(e) => handleFolderChange(e.target.value)}
                 className="min-w-[8rem] max-w-[16rem] px-4 py-2 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text text-sm"
-                style={{ width: `${Math.max(...folders.map(f => f.length), 4) + 4}ch` }}
+                style={{ width: `${Math.max(...folders.map(f => f.length), 0, 11) + 4}ch` }}
               >
                 {folders.map(f => (
                   <option key={f} value={f}>{f}</option>
                 ))}
+                <option value="__offline__">offline ({offline.offlineFiles.length})</option>
               </select>
-              {freeSpace[folderKey] != null && (
+              {isOfflineFolder ? (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-th-bg-alt text-th-text-dim border border-th-border-lighter">
+                  {formatBytes(offline.totalSize)} used
+                </span>
+              ) : freeSpace[folderKey] != null ? (
                 <span className="px-2 py-0.5 rounded-full text-xs bg-th-bg-alt text-th-text-dim border border-th-border-lighter">
                   {formatBytes(freeSpace[folderKey])} free
                 </span>
-              )}
+              ) : null}
             </div>
           )}
           {/* Right: actions — inline on sm+, "more" menu on mobile */}
           {/* Desktop inline actions */}
           <div className="hidden sm:flex items-center gap-3">
-            {currentDepth < 2 && folderKey && (
+            {!isOfflineFolder && currentDepth < 2 && folderKey && (
               creatingFolder ? (
                 <NewFolderForm
                   name={newFolderName}
@@ -567,7 +699,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             )}
           </div>
           {/* Mobile "more" menu */}
-          {((currentDepth < 2 && folderKey) || transcodingAvailable) && (
+          {!isOfflineFolder && ((currentDepth < 2 && folderKey) || transcodingAvailable) && (
             <div className="relative sm:hidden" ref={moreMenuRef}>
               <button
                 onClick={() => setMoreMenuOpen(o => !o)}
@@ -621,7 +753,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         )}
 
         {/* Breadcrumbs */}
-        {subpath !== '' && (
+        {!isOfflineFolder && subpath !== '' && (
           <div className="flex items-center gap-1 mb-4 text-sm flex-wrap">
             <button
               onClick={() => handleBreadcrumbClick(-1)}
@@ -716,6 +848,12 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             {error}
           </div>
         )}
+        {offline.saveError && (
+          <div className="p-4 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-600 flex items-center justify-between">
+            <span>Failed to save offline: {offline.saveError}</span>
+            <button onClick={offline.clearSaveError} className="text-red-400 hover:text-red-600 ml-2 shrink-0"><X className="w-4 h-4" /></button>
+          </div>
+        )}
 
         {/* Media viewer */}
         {previewFile && (
@@ -736,54 +874,60 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
               </div>
             ) : mediaType ? (
               <div className="flex items-center justify-center p-4 bg-th-bg-media min-h-[200px]">
-                {mediaType === 'video' && (
-                  videoError ? (
-                    <div className="text-red-500 text-sm text-center p-4">
-                      <p>Failed to load video{transcoding ? ' (transcoding may have failed)' : ''}.</p>
-                      <button
-                        className="mt-2 text-th-accent hover:underline"
-                        onClick={() => { setVideoError(false); setVideoRetryKey(k => k + 1); }}
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : (
-                    <video
-                      key={`${previewFile}-${videoRetryKey}`}
-                      src={videoSrc(previewFile)}
-                      controls
-                      playsInline
-                      className="max-w-full max-h-[70vh]"
-                      onError={() => setVideoError(true)}
-                    />
-                  )
-                )}
-                {mediaType === 'audio' && (
-                  <audio
-                    key={previewFile}
-                    src={fileUrl(previewFile)}
-                    controls
-                    className="w-full max-w-lg"
-                  />
-                )}
-                {mediaType === 'image' && (
-                  <img
-                    key={previewFile}
-                    src={fileUrl(previewFile)}
-                    alt={previewFile}
-                    className="max-w-full max-h-[70vh] object-contain"
-                  />
-                )}
+                {(() => {
+                  const src = getPreviewUrl(previewFile, mediaType === 'video' ? 'video' : 'file');
+                  if (!src) return <Loader2 className="w-6 h-6 animate-spin text-th-text-faint" />;
+                  return (
+                    <>
+                      {mediaType === 'video' && (
+                        videoError ? (
+                          <div className="text-red-500 text-sm text-center p-4">
+                            <p>Failed to load video{transcoding ? ' (transcoding may have failed)' : ''}.</p>
+                            <button
+                              className="mt-2 text-th-accent hover:underline"
+                              onClick={() => { setVideoError(false); setVideoRetryKey(k => k + 1); }}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : (
+                          <video
+                            key={`${previewFile}-${videoRetryKey}`}
+                            src={src}
+                            controls
+                            playsInline
+                            className="max-w-full max-h-[70vh]"
+                            onError={() => setVideoError(true)}
+                          />
+                        )
+                      )}
+                      {mediaType === 'audio' && (
+                        <audio key={previewFile} src={src} controls className="w-full max-w-lg" />
+                      )}
+                      {mediaType === 'image' && (
+                        <img key={previewFile} src={src} alt={previewFile} className="max-w-full max-h-[70vh] object-contain" />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ) : null}
           </div>
         )}
 
         {/* File list */}
-        {loading ? (
+        {loading && !isOfflineFolder ? (
           <div className="py-20 text-center text-th-text-faint text-sm">Loading...</div>
-        ) : files.length === 0 && dirs.length === 0 && !subpath ? (
-          <div className="py-20 text-center text-th-text-faint text-sm">No files in this folder.</div>
+        ) : displayFiles.length === 0 && displayDirs.length === 0 && !subpath ? (
+          <div className="py-20 text-center text-th-text-faint text-sm">
+            {isOfflineFolder ? (
+              <div className="flex flex-col items-center gap-2">
+                <WifiOff className="w-8 h-8 text-th-text-faint" />
+                <p>No offline files saved yet.</p>
+                <p className="text-xs">Browse a folder and tap <CloudDownload className="w-3.5 h-3.5 inline" /> to save files for offline playback.</p>
+              </div>
+            ) : 'No files in this folder.'}
+          </div>
         ) : (
           <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
             <table className="w-full text-sm">
@@ -791,13 +935,13 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3 w-28 hidden sm:table-cell">Size</th>
-                  <th className="px-4 py-3 w-44 hidden md:table-cell">Modified</th>
+                  <th className="px-4 py-3 w-44 hidden md:table-cell">{isOfflineFolder ? 'Source' : 'Modified'}</th>
                   <th className="px-4 py-3 w-32 hidden sm:table-cell"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-th-border-lighter">
                 {/* Back row */}
-                {subpath !== '' && (
+                {!isOfflineFolder && subpath !== '' && (
                   <tr
                     className="hover:bg-th-bg-alt transition cursor-pointer"
                     onClick={() => handleBreadcrumbClick(subpath.split('/').length - 2)}
@@ -815,7 +959,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   </tr>
                 )}
                 {/* Directory rows */}
-                {dirs.map((dirName) => (
+                {displayDirs.map((dirName) => (
                   <tr
                     key={`dir-${dirName}`}
                     className="hover:bg-th-bg-alt transition cursor-pointer"
@@ -902,27 +1046,45 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     </td>
                   </tr>
                 ))}
-                {files.map((file, fileIndex) => {
+                {displayFiles.map((file, fileIndex) => {
                   const isSelected = selectedFiles.has(file.name);
                   const showExpanded = isSelected && selectedFiles.size === 1;
+                  const offMeta = isOfflineFolder ? offlineFileMeta.get(file.name) : undefined;
+                  const displayName = offMeta?.name ?? file.name;
+                  const fileIsOffline = isOfflineFolder || offline.isOffline(folderKey, subpath, file.name);
+                  const fileIsSaving = offline.isSaving(folderKey, subpath, file.name);
                   return (
                     <Fragment key={file.name}>
                       <tr
                         className={`hover:bg-th-bg-alt transition cursor-pointer ${isSelected ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
                         onClick={(e) => handleFileClick(file.name, fileIndex, e)}
-                        {...drag.fileRow(file.name)}
+                        {...(isOfflineFolder ? {} : drag.fileRow(file.name))}
                       >
                         <td className="px-4 py-4 sm:py-3 max-w-0 min-w-[150px]">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="shrink-0"><MediaIcon filename={file.name} /></span>
+                            <span className="shrink-0 relative">
+                              <MediaIcon filename={displayName} />
+                              {fileIsOffline && !isOfflineFolder && (
+                                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500" title="Saved offline" />
+                              )}
+                            </span>
                             <div className="min-w-0">
-                              <span className="font-medium text-th-text-sub truncate block" title={file.name}>{file.name}</span>
-                              <span className="text-xs text-th-text-faint sm:hidden">{formatBytes(file.size)}</span>
+                              <span className="font-medium text-th-text-sub truncate block" title={displayName}>{displayName}</span>
+                              <span className="text-xs text-th-text-faint sm:hidden">
+                                {formatBytes(file.size)}
+                                {offMeta && (
+                                  <span className="ml-1 text-th-text-faint">· {offMeta.folderKey}</span>
+                                )}
+                              </span>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden sm:table-cell">{formatBytes(file.size)}</td>
-                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden md:table-cell">{formatDate(file.modifiedAt)}</td>
+                        <td className="px-4 py-3 text-th-text-dim whitespace-nowrap hidden md:table-cell">
+                          {offMeta
+                            ? <span title={formatDate(file.modifiedAt)}>{offMeta.folderKey}{offMeta.subpath ? `/${offMeta.subpath}` : ''}</span>
+                            : formatDate(file.modifiedAt)}
+                        </td>
                         {/* Desktop action buttons */}
                         <td className="px-4 py-3 hidden sm:table-cell">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -947,11 +1109,30 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               )
                             ) : (
                               <>
-                                <a href={fileUrl(file.name)} download={file.name} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub transition" title="Download"><Download className="w-4 h-4" /></a>
-                                {folders.length > 1 && (
-                                  <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Move to another folder"><ArrowRightLeft className="w-4 h-4" /></button>
+                                {isOfflineFolder ? (
+                                  <button
+                                    onClick={() => {
+                                      const meta = offlineFileMeta.get(file.name);
+                                      if (meta) offline.removeOffline(meta.folderKey, meta.subpath, meta.name);
+                                    }}
+                                    className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition"
+                                    title="Remove from offline"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                ) : (
+                                  <>
+                                    <a href={fileUrl(file.name)} download={file.name} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub transition" title="Download"><Download className="w-4 h-4" /></a>
+                                    <OfflineButton compact isSaving={fileIsSaving} isOffline={fileIsOffline}
+                                      onSave={() => offline.saveOffline(fileUrl(file.name), folderKey, subpath, file.name, getMediaType(file.name)).catch(() => {})}
+                                      onRemove={() => offline.removeOffline(folderKey, subpath, file.name)}
+                                    />
+                                    {folders.length > 1 && (
+                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Move to another folder"><ArrowRightLeft className="w-4 h-4" /></button>
+                                    )}
+                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                                  </>
                                 )}
-                                <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
                               </>
                             )}
                           </div>
@@ -982,18 +1163,36 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                 </div>
                               )
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <a href={fileUrl(file.name)} download={file.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
-                                  <Download className="w-3.5 h-3.5" />Download
-                                </a>
-                                {folders.length > 1 && (
-                                  <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
-                                    <ArrowRightLeft className="w-3.5 h-3.5" />Move
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isOfflineFolder ? (
+                                  <button
+                                    onClick={() => {
+                                      const meta = offlineFileMeta.get(file.name);
+                                      if (meta) offline.removeOffline(meta.folderKey, meta.subpath, meta.name);
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />Remove Offline
                                   </button>
+                                ) : (
+                                  <>
+                                    <a href={fileUrl(file.name)} download={file.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                      <Download className="w-3.5 h-3.5" />Download
+                                    </a>
+                                    <OfflineButton isSaving={fileIsSaving} isOffline={fileIsOffline}
+                                      onSave={() => offline.saveOffline(fileUrl(file.name), folderKey, subpath, file.name, getMediaType(file.name)).catch(() => {})}
+                                      onRemove={() => offline.removeOffline(folderKey, subpath, file.name)}
+                                    />
+                                    {folders.length > 1 && (
+                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                        <ArrowRightLeft className="w-3.5 h-3.5" />Move
+                                      </button>
+                                    )}
+                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition ml-auto">
+                                      <Trash2 className="w-3.5 h-3.5" />Delete
+                                    </button>
+                                  </>
                                 )}
-                                <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition ml-auto">
-                                  <Trash2 className="w-3.5 h-3.5" />Delete
-                                </button>
                               </div>
                             )}
                           </td>
@@ -1018,7 +1217,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
               <ChevronLeft className="w-4 h-4" /> Prev
             </button>
             <span className="text-sm text-th-text-dim">
-              Page {page} of {totalPages} ({total} files)
+              Page {page} of {totalPages} ({displayTotal} files)
             </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
