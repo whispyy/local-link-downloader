@@ -23,6 +23,16 @@ interface QueueJob {
   downloaded_bytes?: number;
   created_at: string;
   updated_at: string;
+  type?: 'http' | 'torrent' | 'ytdlp';
+  ytdlp_percent?: number;
+  ytdlp_speed?: string;
+  ytdlp_eta?: string;
+  ytdlp_phase?: 'downloading' | 'postprocessing';
+}
+
+function getJobDisplayName(job: QueueJob): string {
+  if (job.filename) return job.filename;
+  return job.type === 'ytdlp' ? 'Resolving title...' : job.url;
 }
 
 interface QueuePageProps {
@@ -71,6 +81,22 @@ function StatusBadge({ status }: { status: JobStatus }) {
 
 function SizeCell({ job }: { job: QueueJob }) {
   if (job.status === 'queued') return <span className="text-th-text-faint">—</span>;
+
+  // yt-dlp jobs: show percent + speed instead of byte counts
+  if (job.type === 'ytdlp' && job.status === 'downloading') {
+    if (job.ytdlp_phase === 'postprocessing') {
+      return <span className="text-th-text-dim whitespace-nowrap">Converting...</span>;
+    }
+    if (job.ytdlp_percent != null && job.ytdlp_percent >= 0) {
+      return (
+        <span className="text-th-text-dim whitespace-nowrap">
+          {Math.round(job.ytdlp_percent)}%
+          {job.ytdlp_speed ? <span className="ml-1 text-xs text-th-text-faint">({job.ytdlp_speed})</span> : null}
+        </span>
+      );
+    }
+    return <span className="text-th-text-dim whitespace-nowrap">Starting...</span>;
+  }
 
   if (job.status === 'downloading') {
     const dl = job.downloaded_bytes ?? 0;
@@ -285,9 +311,22 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                         <ChevronDown className={`w-4 h-4 text-th-text-faint transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} />
                       </div>
                     </div>
-                    <p className="font-medium text-th-text-sub text-sm truncate" title={job.filename}>{job.filename}</p>
+                    <p className="font-medium text-th-text-sub text-sm truncate" title={getJobDisplayName(job)}>{getJobDisplayName(job)}</p>
                     <p className="text-xs text-th-text-faint mt-0.5">{job.folder_key}</p>
-                    {job.status === 'downloading' && job.total_bytes != null && job.total_bytes > 0 && (
+                    {job.status === 'downloading' && job.type === 'ytdlp' && (
+                      <div className="mt-2">
+                        <div className="h-1.5 rounded-full bg-th-bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${job.ytdlp_phase === 'postprocessing' ? 'bg-blue-500 animate-pulse' : 'bg-yellow-500'}`}
+                            style={{ width: job.ytdlp_phase === 'postprocessing' ? '100%' : `${Math.max(0, Math.min(100, Math.round(job.ytdlp_percent ?? 0)))}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-th-text-faint mt-1 block">
+                          <SizeCell job={job} />
+                        </span>
+                      </div>
+                    )}
+                    {job.status === 'downloading' && job.type !== 'ytdlp' && job.total_bytes != null && job.total_bytes > 0 && (
                       <div className="mt-2">
                         <div className="h-1.5 rounded-full bg-th-bg-muted overflow-hidden">
                           <div
@@ -300,7 +339,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                         </span>
                       </div>
                     )}
-                    {job.status === 'downloading' && (job.total_bytes == null || job.total_bytes === 0) && job.downloaded_bytes != null && (
+                    {job.status === 'downloading' && job.type !== 'ytdlp' && (job.total_bytes == null || job.total_bytes === 0) && job.downloaded_bytes != null && (
                       <span className="text-xs text-th-text-faint mt-1 block">
                         <SizeCell job={job} />
                       </span>
@@ -395,7 +434,7 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="font-medium text-th-text-sub">{job.filename}</span>
+                          <span className="font-medium text-th-text-sub">{getJobDisplayName(job)}</span>
                           {(job.status !== 'queued' && (job.downloaded_bytes != null || job.total_bytes != null)) && (
                             <span className="block text-xs text-th-text-faint mt-0.5">
                               <SizeCell job={job} />

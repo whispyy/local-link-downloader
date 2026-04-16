@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet } from 'lucide-react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, Youtube } from 'lucide-react';
 import NavBar from '../components/NavBar';
 import { isTerminalTransition, sendJobNotification } from '../notifications';
 import { formatBytes } from '../utils';
@@ -20,9 +20,13 @@ interface DownloadJob {
   folder_key?: string;
   total_bytes?: number;
   downloaded_bytes?: number;
-  type?: 'http' | 'torrent';
+  type?: 'http' | 'torrent' | 'ytdlp';
   peers?: number;
   download_speed?: number;
+  ytdlp_percent?: number;
+  ytdlp_speed?: string;
+  ytdlp_eta?: string;
+  ytdlp_phase?: 'downloading' | 'postprocessing';
 }
 
 interface AppProps {
@@ -31,7 +35,7 @@ interface AppProps {
   authEnabled: boolean;
 }
 
-type Mode = 'url' | 'upload' | 'torrent';
+type Mode = 'url' | 'upload' | 'torrent' | 'ytdlp';
 
 function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [config, setConfig] = useState<Config>({ folders: [], allowedExtensions: [] });
@@ -53,6 +57,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [torrentFile, setTorrentFile] = useState<File | null>(null);
   const [isDraggingTorrent, setIsDraggingTorrent] = useState(false);
   const torrentInputRef = useRef<HTMLInputElement>(null);
+
+  // YouTube mode state
+  const [ytdlpUrl, setYtdlpUrl] = useState('');
+  const [ytdlpFormat, setYtdlpFormat] = useState<'video' | 'audio'>('video');
 
   // Shared state
   const [folderKey, setFolderKey] = useState('');
@@ -237,6 +245,28 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     }
   };
 
+  // ── YouTube submit ─────────────────────────────────────────────────────────
+  const handleYtdlpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ytdlpUrl) return;
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/ytdlp', {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: ytdlpUrl, folderKey, format: ytdlpFormat }),
+      });
+      if (response.status === 401) { onUnauthorized(); return; }
+      const data = await response.json();
+      prevJobStatusRef.current = response.ok ? data.status : 'error';
+      setCurrentJob(response.ok ? data : { id: 'error', status: 'error', message: data.error || 'Failed to start download' });
+    } catch (error) {
+      setCurrentJob({ id: 'error', status: 'error', message: error instanceof Error ? error.message : 'Network error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ── File validation ────────────────────────────────────────────────────────
   const validateFileExtension = (file: File): boolean => {
     const exts = config.allowedExtensions;
@@ -311,7 +341,12 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     if (!currentJob) return null;
     switch (currentJob.status) {
       case 'queued':      return 'Queued';
-      case 'downloading': return mode === 'upload' ? 'Uploading...' : currentJob.type === 'torrent' ? 'Downloading torrent...' : 'Downloading...';
+      case 'downloading': {
+        if (mode === 'upload') return 'Uploading...';
+        if (currentJob.type === 'torrent') return 'Downloading torrent...';
+        if (currentJob.type === 'ytdlp' && currentJob.ytdlp_phase === 'postprocessing') return 'Processing...';
+        return 'Downloading...';
+      }
       case 'done':        return mode === 'upload' ? 'Upload complete' : 'Download complete';
       case 'cancelled':   return 'Cancelled';
       case 'error':       return 'Error';
@@ -330,6 +365,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setUploadError(null);
     setMagnetUrl('');
     setTorrentFile(null);
+    setYtdlpUrl('');
+    setYtdlpFormat('video');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (torrentInputRef.current) torrentInputRef.current.value = '';
   };
@@ -385,6 +422,16 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             >
               <Magnet className="w-4 h-4 shrink-0 hidden sm:block" />
               Torrent
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('ytdlp'); handleReset(); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${
+                mode === 'ytdlp' ? 'bg-th-bg text-th-text shadow-sm' : 'text-th-text-dim hover:text-th-text-sub'
+              }`}
+            >
+              <Youtube className="w-4 h-4 shrink-0 hidden sm:block" />
+              YouTube
             </button>
           </div>
 
@@ -592,6 +639,64 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
             </form>
           )}
 
+          {/* ── YouTube mode ── */}
+          {mode === 'ytdlp' && (
+            <form onSubmit={handleYtdlpSubmit} className="space-y-4 sm:space-y-5">
+              <div>
+                <label htmlFor="ytdlp-url" className="block text-sm font-medium text-th-text-sub mb-2">Video URL</label>
+                <input
+                  id="ytdlp-url"
+                  type="url"
+                  value={ytdlpUrl}
+                  onChange={(e) => setYtdlpUrl(e.target.value)}
+                  required
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-th-text-sub mb-2">Format</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setYtdlpFormat('video')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition border ${
+                      ytdlpFormat === 'video'
+                        ? 'bg-th-btn text-th-btn-text border-th-btn'
+                        : 'bg-th-bg text-th-text-sub border-th-border-light hover:bg-th-bg-alt'
+                    }`}
+                  >
+                    Video (MP4)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setYtdlpFormat('audio')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition border ${
+                      ytdlpFormat === 'audio'
+                        ? 'bg-th-btn text-th-btn-text border-th-btn'
+                        : 'bg-th-bg text-th-text-sub border-th-border-light hover:bg-th-bg-alt'
+                    }`}
+                  >
+                    Audio (MP3)
+                  </button>
+                </div>
+              </div>
+
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
+
+              <button
+                type="submit"
+                disabled={isSubmitting || !ytdlpUrl || !folderKey}
+                className="w-full bg-th-btn text-th-btn-text py-2.5 px-4 rounded-lg hover:bg-th-btn-hover disabled:bg-th-btn-disabled disabled:cursor-not-allowed transition flex items-center justify-center gap-2 font-medium"
+              >
+                {isSubmitting
+                  ? <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Starting...</span>
+                  : <span className="inline-flex items-center gap-2"><Download className="w-4 h-4" />Download</span>}
+              </button>
+            </form>
+          )}
+
           {/* Status panel */}
           {currentJob && (
             <div className="mt-6 p-4 bg-th-bg-alt rounded-lg border border-th-border-light">
@@ -630,6 +735,29 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   {currentJob.download_speed ? ` · ${formatBytes(currentJob.download_speed)}/s` : ''}
                 </p>
               )}
+              {currentJob.status === 'downloading' && currentJob.type === 'ytdlp' && (
+                <div className="ml-8 mt-1">
+                  {currentJob.ytdlp_phase === 'postprocessing' ? (
+                    <div className="flex items-center gap-2 text-xs text-th-text-dim">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Converting / merging...</span>
+                    </div>
+                  ) : currentJob.ytdlp_percent != null && currentJob.ytdlp_percent >= 0 ? (
+                    <>
+                      <div className="flex justify-between text-xs text-th-text-dim mb-1">
+                        <span>{currentJob.ytdlp_speed}{currentJob.ytdlp_eta ? ` · ETA ${currentJob.ytdlp_eta}` : ''}</span>
+                        <span>{Math.round(currentJob.ytdlp_percent)}%</span>
+                      </div>
+                      <div className="w-full bg-th-progress rounded-full h-1.5">
+                        <div
+                          className="bg-th-progress-fill h-1.5 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, currentJob.ytdlp_percent)}%` }}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
               {currentJob.status === 'done' && currentJob.total_bytes != null && (
                 <p className="text-xs text-th-text-dim ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
               )}
@@ -649,7 +777,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               )}
               {(currentJob.status === 'done' || currentJob.status === 'error' || currentJob.status === 'cancelled') && (
                 <button onClick={handleReset} className="mt-3 ml-8 text-sm text-th-text-sub hover:text-th-text underline">
-                  {mode === 'upload' ? 'Upload another file' : mode === 'torrent' ? 'Start new torrent' : 'Start new download'}
+                  {mode === 'upload' ? 'Upload another file' : mode === 'torrent' ? 'Start new torrent' : mode === 'ytdlp' ? 'Download another video' : 'Start new download'}
                 </button>
               )}
             </div>

@@ -6,7 +6,8 @@ import QueuePage from './pages/QueuePage.tsx';
 import BrowsePage from './pages/BrowsePage.tsx';
 import LoginPage from './pages/LoginPage.tsx';
 import UsagePage from './pages/UsagePage.tsx';
-import SettingsPage from './pages/SettingsPage.tsx';
+import AutoCleanPage from './pages/AutoCleanPage.tsx';
+import PlaylistsPage from './pages/PlaylistsPage.tsx';
 import VersionBadge from './components/VersionBadge.tsx';
 import './index.css';
 
@@ -81,7 +82,16 @@ function Root() {
   }
 
   if (hash === '#/settings') {
-    return <><SettingsPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+    window.location.hash = '#/autoclean';
+    return null;
+  }
+
+  if (hash === '#/autoclean') {
+    return <><AutoCleanPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
+  }
+
+  if (hash === '#/playlists') {
+    return <><PlaylistsPage token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
   }
 
   return <><App token={token} onUnauthorized={handleUnauthorized} authEnabled={authEnabled} /><VersionBadge /></>;
