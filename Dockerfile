@@ -41,7 +41,7 @@ RUN cp server/legacy.html dist/server/legacy.html
 # ─── Stage 3: Production image ────────────────────────────────────────────────
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache ffmpeg curl \
+RUN apk add --no-cache ffmpeg curl python3 \
     && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
     && chmod a+rx /usr/local/bin/yt-dlp
 
