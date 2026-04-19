@@ -85,7 +85,7 @@ export default function PlaylistsPage({ token, onUnauthorized, authEnabled }: Pl
   const handleAdd = async () => {
     if (!newUrl || !newFolder) return;
     const pl: Playlist = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).slice(2) + Date.now().toString(36),
       url: newUrl,
       folderKey: newFolder,
       format: newFormat,
