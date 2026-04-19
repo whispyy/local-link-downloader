@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Local Link Downloader — Self-hosted file download manager</title>
-  <meta name="description" content="A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents — all saved to folders on your machine." />
+  <meta name="description" content="A self-hosted web UI for downloading files from URLs, uploading local files, pulling torrents, or downloading YouTube videos and playlists — all saved to folders on your machine." />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -87,8 +87,8 @@
         <span class="gradient-text">Local Link Downloader</span>
       </h1>
       <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-        A self-hosted web UI for downloading files from URLs, uploading local files, or pulling torrents —
-        all saved to folders on your machine.
+        A self-hosted web UI for downloading files from URLs, uploading local files, pulling torrents,
+        or downloading YouTube videos and playlists — all saved to folders on your machine.
       </p>
 
       <!-- Pull command -->
@@ -154,11 +154,35 @@
         </div>
 
         <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-red-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-red-500/10">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">YouTube Downloads</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Paste a YouTube URL to download as video (MP4) or audio (MP3) via yt-dlp. Titles are resolved automatically with live progress tracking.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-pink-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-pink-500/10">
+            <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Playlist Sync</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Add YouTube playlists that sync on a schedule (1-24h). Per-video status tracking with manual retry for failed downloads.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
+          <div class="w-10 h-10 bg-orange-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-orange-500/10">
+            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h3 class="font-semibold text-slate-100 mb-2">Auto-Clean</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Set per-folder retention policies to automatically delete files older than a configured number of days. Rules are persisted and survive restarts.</p>
+        </div>
+
+        <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
           <div class="w-10 h-10 bg-amber-500/15 rounded-xl flex items-center justify-center mb-4 ring-1 ring-amber-500/10">
             <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           </div>
           <h3 class="font-semibold text-slate-100 mb-2">Live Progress</h3>
-          <p class="text-slate-400 text-sm leading-relaxed">Real-time progress bar with bytes downloaded, total size, and percentage. No page reload needed — auto-refreshes in place.</p>
+          <p class="text-slate-400 text-sm leading-relaxed">Real-time progress bar for HTTP, torrent, and YouTube downloads. Bytes, percentage, speed, and ETA — auto-refreshes in place.</p>
         </div>
 
         <div class="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-slate-600/80 hover:bg-slate-800/60 transition-all duration-200">
@@ -225,7 +249,8 @@
     <span class="text-violet-300">volumes</span><span class="text-slate-300">:</span>
       <span class="text-slate-400">- /mnt/nas/images:/downloads/images</span>
       <span class="text-slate-400">- /mnt/nas/videos:/downloads/videos</span>
-      <span class="text-slate-400">- ./logs/web-downloader:/app/logs</span></code></pre>
+      <span class="text-slate-400">- ./logs/web-downloader:/app/logs</span>
+      <span class="text-slate-400">- ./data/web-downloader:/app/data</span>  <span class="text-slate-600"># playlist &amp; auto-clean config</span></code></pre>
           <button onclick="copyCode(this)"
                   data-code="services:
   web-downloader:
@@ -240,7 +265,8 @@
     volumes:
       - /mnt/nas/images:/downloads/images
       - /mnt/nas/videos:/downloads/videos
-      - ./logs/web-downloader:/app/logs"
+      - ./logs/web-downloader:/app/logs
+      - ./data/web-downloader:/app/data"
                   class="copy-btn absolute top-3 right-3 bg-slate-700/80 hover:bg-slate-600 text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all opacity-0 group-hover:opacity-100">
             Copy
           </button>
@@ -339,6 +365,11 @@
                 <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">LOG_DIR</code></td>
                 <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">./logs</td>
                 <td class="py-3.5 px-5 text-slate-400">Directory where <code class="text-slate-300 text-xs">downloads.log</code> and usage data are written.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/30 transition-colors">
+                <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">DATA_DIR</code></td>
+                <td class="py-3.5 px-5 text-slate-500 font-mono text-xs">./data</td>
+                <td class="py-3.5 px-5 text-slate-400">Persistent config directory (<code class="text-slate-300 text-xs">playlists.json</code>, <code class="text-slate-300 text-xs">auto-clean.json</code>). Mount as a volume to preserve across restarts.</td>
               </tr>
               <tr class="hover:bg-slate-800/30 transition-colors">
                 <td class="py-3.5 px-5 whitespace-nowrap"><code class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded text-xs font-mono">DISCORD_WEBHOOK_URL</code></td>
