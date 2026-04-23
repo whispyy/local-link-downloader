@@ -150,6 +150,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [renamingBreadcrumb, setRenamingBreadcrumb] = useState(false);
   const [renameBreadcrumbValue, setRenameBreadcrumbValue] = useState('');
   const [renameBreadcrumbLoading, setRenameBreadcrumbLoading] = useState(false);
+  const [renamingFile, setRenamingFile] = useState<string | null>(null);
+  const [renameFileValue, setRenameFileValue] = useState('');
+  const [renameFileLoading, setRenameFileLoading] = useState(false);
   const [confirmDeleteBreadcrumb, setConfirmDeleteBreadcrumb] = useState(false);
   const [deletingBreadcrumb, setDeletingBreadcrumb] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -439,6 +442,32 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setRenameDirLoading(false);
     }
   }, [folderKey, subpath, renameDirValue, authHeaders, onUnauthorized, fetchFiles]);
+
+  const handleRenameFile = useCallback(async (oldName: string) => {
+    const trimmed = renameFileValue.trim();
+    if (!trimmed || trimmed === oldName) { setRenamingFile(null); return; }
+    setRenameFileLoading(true);
+    try {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rename-file`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subpath, oldName, newName: trimmed }),
+      });
+      if (res.status === 401) { onUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Rename failed' }));
+        setError(data.error || 'Rename failed');
+        return;
+      }
+      setRenamingFile(null);
+      setRenameFileValue('');
+      fetchFiles();
+    } catch {
+      setError('Failed to rename file');
+    } finally {
+      setRenameFileLoading(false);
+    }
+  }, [folderKey, subpath, renameFileValue, authHeaders, onUnauthorized, fetchFiles]);
 
   const handleDeleteDir = useCallback(async (dirName: string) => {
     setDeletingDir(true);
@@ -1057,7 +1086,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                     <Fragment key={file.name}>
                       <tr
                         className={`hover:bg-th-bg-alt transition cursor-pointer ${isSelected ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
-                        onClick={(e) => handleFileClick(file.name, fileIndex, e)}
+                        onClick={(e) => { if (!renamingFile) handleFileClick(file.name, fileIndex, e); }}
                         {...(isOfflineFolder ? {} : drag.fileRow(file.name))}
                       >
                         <td className="px-4 py-4 sm:py-3 max-w-0 min-w-[150px]">
@@ -1069,7 +1098,23 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                               )}
                             </span>
                             <div className="min-w-0">
-                              <span className="font-medium text-th-text-sub truncate block" title={displayName}>{displayName}</span>
+                              {renamingFile === file.name ? (
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={renameFileValue}
+                                  onChange={(e) => setRenameFileValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameFile(file.name);
+                                    if (e.key === 'Escape') { setRenamingFile(null); setRenameFileValue(''); }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  disabled={renameFileLoading}
+                                  className="px-2 py-0.5 text-sm border border-th-border rounded bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring min-w-0 w-full"
+                                />
+                              ) : (
+                                <span className="font-medium text-th-text-sub truncate block" title={displayName}>{displayName}</span>
+                              )}
                               <span className="text-xs text-th-text-faint sm:hidden">
                                 {formatBytes(file.size)}
                                 {offMeta && (
@@ -1107,6 +1152,22 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                   <button onClick={() => setMoveTarget(null)} className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition">Cancel</button>
                                 </>
                               )
+                            ) : renamingFile === file.name ? (
+                              <>
+                                <button
+                                  onClick={() => handleRenameFile(file.name)}
+                                  disabled={renameFileLoading || !renameFileValue.trim()}
+                                  className="px-2 py-1 rounded text-xs font-medium bg-purple-500/15 text-purple-600 hover:bg-purple-500/25 transition disabled:opacity-50"
+                                >
+                                  {renameFileLoading ? 'Saving…' : 'Save'}
+                                </button>
+                                <button
+                                  onClick={() => { setRenamingFile(null); setRenameFileValue(''); }}
+                                  className="px-2 py-1 rounded text-xs font-medium text-th-text-dim hover:text-th-text transition"
+                                >
+                                  Cancel
+                                </button>
+                              </>
                             ) : (
                               <>
                                 {isOfflineFolder ? (
@@ -1128,9 +1189,10 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                       onRemove={() => offline.removeOffline(folderKey, subpath, file.name)}
                                     />
                                     {folders.length > 1 && (
-                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Move to another folder"><ArrowRightLeft className="w-4 h-4" /></button>
+                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); setRenamingFile(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Move to another folder"><ArrowRightLeft className="w-4 h-4" /></button>
                                     )}
-                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={() => { setRenamingFile(file.name); setRenameFileValue(file.name); setConfirmDelete(null); setMoveTarget(null); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Rename file"><Pencil className="w-4 h-4" /></button>
+                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); setRenamingFile(null); }} className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-500/15 transition" title="Delete"><Trash2 className="w-4 h-4" /></button>
                                   </>
                                 )}
                               </>
@@ -1162,6 +1224,25 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                   <button onClick={() => setMoveTarget(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-dim hover:text-th-text bg-th-bg border border-th-border-light transition">Cancel</button>
                                 </div>
                               )
+                            ) : renamingFile === file.name ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={renameFileValue}
+                                  onChange={(e) => setRenameFileValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameFile(file.name);
+                                    if (e.key === 'Escape') { setRenamingFile(null); setRenameFileValue(''); }
+                                  }}
+                                  disabled={renameFileLoading}
+                                  className="flex-1 px-3 py-1.5 rounded-lg text-xs border border-th-border bg-th-bg text-th-text outline-none focus:ring-2 focus:ring-th-ring"
+                                />
+                                <button onClick={() => handleRenameFile(file.name)} disabled={renameFileLoading || !renameFileValue.trim()} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/15 text-purple-600 hover:bg-purple-500/25 transition disabled:opacity-50">
+                                  {renameFileLoading ? 'Saving…' : 'Save'}
+                                </button>
+                                <button onClick={() => { setRenamingFile(null); setRenameFileValue(''); }} className="px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-dim hover:text-th-text bg-th-bg border border-th-border-light transition">Cancel</button>
+                              </div>
                             ) : (
                               <div className="flex items-center gap-2 flex-wrap">
                                 {isOfflineFolder ? (
@@ -1184,11 +1265,14 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                       onRemove={() => offline.removeOffline(folderKey, subpath, file.name)}
                                     />
                                     {folders.length > 1 && (
-                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                      <button onClick={() => { setMoveTarget(file.name); setConfirmDelete(null); setRenamingFile(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
                                         <ArrowRightLeft className="w-3.5 h-3.5" />Move
                                       </button>
                                     )}
-                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition ml-auto">
+                                    <button onClick={() => { setRenamingFile(file.name); setRenameFileValue(file.name); setConfirmDelete(null); setMoveTarget(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                      <Pencil className="w-3.5 h-3.5" />Rename
+                                    </button>
+                                    <button onClick={() => { setConfirmDelete(file.name); setMoveTarget(null); setRenamingFile(null); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 bg-th-bg border border-red-500/20 transition ml-auto">
                                       <Trash2 className="w-3.5 h-3.5" />Delete
                                     </button>
                                   </>

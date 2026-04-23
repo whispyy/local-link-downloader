@@ -60,6 +60,13 @@
  *   B54 rename-dir requires auth
  *   B55 rmdir requires auth
  *   B56 rename-dir with nested subpath
+ *   B57 rename-file renames a file
+ *   B58 rename-file returns 409 if target name already exists
+ *   B59 rename-file returns 404 for non-existent file
+ *   B60 rename-file rejects invalid names
+ *   B61 rename-file returns 400 when oldName targets a directory
+ *   B62 rename-file works inside a nested subpath
+ *   B63 rename-file requires auth
  */
 
 import request from 'supertest';
@@ -1073,5 +1080,136 @@ describe('DELETE /api/browse/:folderKey/rmdir — auth required', () => {
 
     expect(res.status).toBe(401);
     expect(existsSync(path.join(tmpDir, 'protected'))).toBe(true);
+  });
+});
+
+// ── rename-file ────────────────────────────────────────────────────────────
+
+describe('POST /api/browse/:folderKey/rename-file', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-renamefile-'));
+    writeFileSync(path.join(tmpDir, 'video.mp4'), 'data');
+    writeFileSync(path.join(tmpDir, 'existing.mp4'), 'other');
+    mkdirSync(path.join(tmpDir, 'adir'));
+
+    setEnv({
+      APP_PASSWORD: undefined,
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterEach(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B57 — renames a file', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'video.mp4', newName: 'renamed.mp4' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.name).toBe('renamed.mp4');
+    expect(existsSync(path.join(tmpDir, 'video.mp4'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'renamed.mp4'))).toBe(true);
+  });
+
+  it('B58 — returns 409 if target name already exists', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'video.mp4', newName: 'existing.mp4' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
+    // Both files untouched
+    expect(existsSync(path.join(tmpDir, 'video.mp4'))).toBe(true);
+    expect(existsSync(path.join(tmpDir, 'existing.mp4'))).toBe(true);
+  });
+
+  it('B59 — returns 404 for non-existent file', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'ghost.mp4', newName: 'whatever.mp4' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('B60 — rejects invalid new names', async () => {
+    const res1 = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'video.mp4', newName: '../evil.mp4' });
+    expect(res1.status).toBe(400);
+
+    const res2 = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'video.mp4', newName: 'foo/bar.mp4' });
+    expect(res2.status).toBe(400);
+
+    const res3 = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'video.mp4', newName: '.hidden' });
+    expect(res3.status).toBe(400);
+
+    // Original untouched throughout
+    expect(existsSync(path.join(tmpDir, 'video.mp4'))).toBe(true);
+  });
+
+  it('B61 — returns 400 when oldName targets a directory', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'adir', newName: 'renamed' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not a file/i);
+    expect(existsSync(path.join(tmpDir, 'adir'))).toBe(true);
+  });
+
+  it('B62 — renames a file inside a nested subpath', async () => {
+    mkdirSync(path.join(tmpDir, 'sub'));
+    writeFileSync(path.join(tmpDir, 'sub', 'clip.mp4'), 'clip-data');
+
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: 'sub', oldName: 'clip.mp4', newName: 'renamed-clip.mp4' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('renamed-clip.mp4');
+    expect(existsSync(path.join(tmpDir, 'sub', 'clip.mp4'))).toBe(false);
+    expect(existsSync(path.join(tmpDir, 'sub', 'renamed-clip.mp4'))).toBe(true);
+  });
+});
+
+describe('POST /api/browse/:folderKey/rename-file — auth required', () => {
+  let tmpDir: string;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'wd-test-renamefile-auth-'));
+    writeFileSync(path.join(tmpDir, 'protected.mp4'), 'data');
+
+    setEnv({
+      APP_PASSWORD: 'secret123',
+      DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+    });
+    app = buildApp();
+  });
+
+  afterAll(() => {
+    resetEnv();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('B63 — requires auth', async () => {
+    const res = await request(app)
+      .post('/api/browse/media/rename-file')
+      .send({ subpath: '', oldName: 'protected.mp4', newName: 'nope.mp4' });
+
+    expect(res.status).toBe(401);
+    expect(existsSync(path.join(tmpDir, 'protected.mp4'))).toBe(true);
   });
 });
