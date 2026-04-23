@@ -218,6 +218,19 @@ export function sanitizeFolderName(name: string): string | null {
   return name;
 }
 
+/** Sanitizes a file name for rename. Returns null if invalid. */
+export function sanitizeFileName(name: string): string | null {
+  if (!name || typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 255) return null;
+  if (trimmed.startsWith('.')) return null;
+  if (isUnsafeFilename(trimmed)) return null;
+  // Reject control characters, null bytes, and Windows-reserved characters
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f<>:"*?|]/.test(trimmed)) return null;
+  return trimmed;
+}
+
 export function isInternalIP(hostname: string): boolean {
   if (hostname === 'localhost') return true;
 
@@ -1109,6 +1122,69 @@ export function buildApp() {
     } catch (err) {
       log('ERROR', 'rename-dir failed', { folderKey, oldName, newName: sanitized, error: String(err) });
       res.status(500).json({ error: 'Failed to rename folder' });
+    }
+  });
+
+  // ── POST /api/browse/:folderKey/rename-file ──────────────────────────────
+  app.post('/api/browse/:folderKey/rename-file', authMiddleware, async (req, res) => {
+    const { folderKey } = req.params;
+    const { subpath: rawSubpath, oldName, newName } = req.body;
+
+    const validated = validateDirRequest(folderKey, rawSubpath, res);
+    if (!validated) return;
+    const { subpath, folderPath } = validated;
+
+    if (!oldName || typeof oldName !== 'string' || isUnsafeFilename(oldName)) {
+      res.status(400).json({ error: 'Invalid old file name' });
+      return;
+    }
+
+    const sanitized = sanitizeFileName(newName);
+    if (!sanitized) {
+      res.status(400).json({ error: 'Invalid new file name' });
+      return;
+    }
+
+    const { resolved: dir, error: dirErr } = resolveSubpath(folderPath, subpath);
+    if (dirErr) { res.status(400).json({ error: dirErr }); return; }
+
+    const oldFile = path.join(dir, oldName);
+    const newFile = path.join(dir, sanitized);
+
+    if (!path.resolve(oldFile).startsWith(path.resolve(folderPath) + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+    if (!path.resolve(newFile).startsWith(path.resolve(folderPath) + path.sep)) {
+      res.status(400).json({ error: 'Path traversal detected' });
+      return;
+    }
+
+    try {
+      const s = await stat(oldFile);
+      if (!s.isFile()) {
+        res.status(400).json({ error: 'Not a file' });
+        return;
+      }
+    } catch {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    try {
+      await stat(newFile);
+      res.status(409).json({ error: 'A file with that name already exists' });
+      return;
+    } catch {
+      // newFile does not exist — proceed
+    }
+
+    try {
+      await rename(oldFile, newFile);
+      res.json({ ok: true, name: sanitized });
+    } catch (err) {
+      log('ERROR', 'rename-file failed', { folderKey, oldName, newName: sanitized, error: String(err) });
+      res.status(500).json({ error: 'Failed to rename file' });
     }
   });
 
