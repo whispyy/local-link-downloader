@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useOutsideClick } from '../hooks/useOutsideClick';
 import { Settings, Sun, Moon, Monitor, Bell, BellOff, LogOut, ShieldOff, BellMinus, RefreshCw, Trash2, ListVideo } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
@@ -66,15 +67,7 @@ export default function SettingsMenu({ authEnabled, onSignOut }: SettingsMenuPro
     if (open) setNotifStatus(getNotificationStatus());
   }, [open]);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  useOutsideClick(menuRef, () => setOpen(false), open);
 
   const cycleTheme = () => setTheme((t) => CYCLE[(CYCLE.indexOf(t) + 1) % CYCLE.length]);
 
