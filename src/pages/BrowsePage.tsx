@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil, WifiOff, CloudDownload, Loader2 } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil, WifiOff, CloudDownload, Loader2, ArrowUpDown } from 'lucide-react';
 import PageTitle from '../components/PageTitle';
 import { formatBytes, formatDate, getMediaType } from '../utils';
 import NavBar from '../components/NavBar';
@@ -8,6 +8,7 @@ import { useDragToFolder } from '../hooks/useDragToFolder';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import PullToRefreshIndicator from '../components/PullToRefreshIndicator';
 import { useOfflineStore, OfflineFileMeta } from '../hooks/useOfflineStore';
+import { useOutsideClick } from '../hooks/useOutsideClick';
 
 const OFFLINE_FOLDER_KEY = '__offline__';
 
@@ -79,6 +80,64 @@ function MediaIcon({ filename }: { filename: string }) {
     case 'text':  return <FileCode className="w-4 h-4 text-amber-500" />;
     default:      return <FileText className="w-4 h-4 text-th-text-faint" />;
   }
+}
+
+interface SortIconProps {
+  active: boolean;
+  order: 'asc' | 'desc';
+}
+
+function SortIcon({ active, order }: SortIconProps) {
+  if (!active) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+  return order === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
+}
+
+interface MobileSortMenuProps {
+  sortField: 'name' | 'size' | 'modified';
+  sortOrder: 'asc' | 'desc';
+  onSort: (field: 'name' | 'size' | 'modified') => void;
+}
+
+function MobileSortMenu({ sortField, sortOrder, onSort }: MobileSortMenuProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useOutsideClick(ref, () => setOpen(false), open);
+
+  return (
+    <div className="relative sm:hidden flex items-center gap-1" ref={ref}>
+      <span>Name</span>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-0.5 hover:text-th-text transition"
+        title="Sort by…"
+      >
+        <SortIcon active={true} order={sortOrder} />
+      </button>
+      {sortField !== 'name' && (
+        <span className="normal-case tracking-normal font-normal text-[10px] text-th-text-dim">
+          {sortField === 'size' ? 'Size' : 'Date'}{sortOrder === 'asc' ? '↑' : '↓'}
+        </span>
+      )}
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 min-w-[7rem]">
+          {(['name', 'size', 'modified'] as const).map((f) => {
+            const label = f === 'name' ? 'Name' : f === 'size' ? 'Size' : 'Date';
+            const isActive = sortField === f;
+            return (
+              <button
+                key={f}
+                onClick={() => { onSort(f); setOpen(false); }}
+                className={`w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-th-bg-alt transition ${isActive ? 'text-th-text font-semibold' : 'text-th-text-sub font-normal'}`}
+              >
+                <span>{label}</span>
+                <SortIcon active={isActive} order={sortOrder} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface OfflineButtonProps {
@@ -156,18 +215,10 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [confirmDeleteBreadcrumb, setConfirmDeleteBreadcrumb] = useState(false);
   const [deletingBreadcrumb, setDeletingBreadcrumb] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [sortField, setSortField] = useState<'name' | 'size' | 'modified'>('modified');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Close "more" dropdown on outside click
-  useEffect(() => {
-    if (!moreMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-        setMoreMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [moreMenuOpen]);
+  useOutsideClick(moreMenuRef, () => setMoreMenuOpen(false), moreMenuOpen);
 
   const authHeaders = useAuthHeaders(token);
 
@@ -209,7 +260,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}`, {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}&sort=${sortField}&order=${sortOrder}`, {
         headers: authHeaders,
       });
       if (res.status === 401) { onUnauthorized(); return; }
@@ -223,11 +274,21 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setLoading(false);
     }
-  }, [folderKey, page, limit, subpath, authHeaders, onUnauthorized]);
+  }, [folderKey, page, limit, subpath, sortField, sortOrder, authHeaders, onUnauthorized]);
 
   useEffect(() => {
     fetchFiles();
   }, [fetchFiles]);
+
+  const handleSort = useCallback((field: 'name' | 'size' | 'modified') => {
+    if (sortField === field) {
+      setSortOrder(o => o === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder(field === 'modified' ? 'desc' : 'asc');
+    }
+    setPage(1);
+  }, [sortField]);
 
   // totalPages is calculated below, after offlineFileList is built
 
@@ -250,6 +311,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   }, [closePreview]);
 
   const handleFolderChange = (key: string) => {
+    setSortField('modified');
+    setSortOrder('desc');
     if (key === OFFLINE_FOLDER_KEY) {
       setIsOfflineFolder(true);
       setFolderKey('');
@@ -616,7 +679,17 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       : new Map(),
     [isOfflineFolder, offline.offlineFiles]);
 
-  const displayFiles = isOfflineFolder ? offlineFileList : files;
+  const displayFiles = useMemo(() => {
+    const base = isOfflineFolder ? offlineFileList : files;
+    if (!isOfflineFolder) return base;
+    return [...base].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortField === 'size') cmp = a.size - b.size;
+      else cmp = new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [isOfflineFolder, offlineFileList, files, sortField, sortOrder]);
   const displayDirs = isOfflineFolder ? [] : dirs;
   const displayTotal = isOfflineFolder ? offlineFileList.length : total;
   const totalPages = Math.max(1, Math.ceil(displayTotal / limit));
@@ -962,9 +1035,36 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3 w-28 hidden sm:table-cell">Size</th>
-                  <th className="px-4 py-3 w-44 hidden md:table-cell">{isOfflineFolder ? 'Source' : 'Modified'}</th>
+                  <th className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleSort('name')}
+                        className="hidden sm:flex items-center gap-1 hover:text-th-text transition"
+                      >
+                        Name
+                        <SortIcon active={sortField === 'name'} order={sortOrder} />
+                      </button>
+                      <MobileSortMenu sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 w-28 hidden sm:table-cell">
+                    <button
+                      onClick={() => handleSort('size')}
+                      className="flex items-center gap-1 hover:text-th-text transition"
+                    >
+                      Size
+                      <SortIcon active={sortField === 'size'} order={sortOrder} />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 w-44 hidden md:table-cell">
+                    <button
+                      onClick={() => handleSort('modified')}
+                      className="flex items-center gap-1 hover:text-th-text transition"
+                    >
+                      {isOfflineFolder ? 'Source' : 'Modified'}
+                      <SortIcon active={sortField === 'modified'} order={sortOrder} />
+                    </button>
+                  </th>
                   <th className="px-4 py-3 w-32 hidden sm:table-cell"></th>
                 </tr>
               </thead>

@@ -389,28 +389,35 @@ export function buildApp() {
   // Track all /api requests for the usage page
   app.use('/api', usage.middleware);
 
-  // ── Auth helpers (scoped to this instance) ──────────────────────────────────
-  function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
-    if (!isAuthEnabled()) { next(); return; }
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (!isValidSession(token)) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-    next();
-  }
-
-  // ── Rate limiter ────────────────────────────────────────────────────────────
+  // ── Rate limiters ──────────────────────────────────────────────────────────
   // Each buildApp() call creates its own in-memory rate-limit store, so
   // parallel test instances using different app objects don't share counters.
-  const authLimiter = rateLimit({
+  const RATE_LIMIT_CONFIG = {
     windowMs: 15 * 60 * 1000,
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many login attempts, please try again later' },
-  });
+  };
+  const authLimiter = rateLimit(RATE_LIMIT_CONFIG);
+  // Separate limiter for the password-as-Bearer path in authMiddleware so
+  // brute-force attempts via arbitrary API endpoints are rate-limited the same
+  // way as POST /api/auth.
+  const passwordBearerLimiter = rateLimit(RATE_LIMIT_CONFIG);
+
+  // ── Auth helpers (scoped to this instance) ──────────────────────────────────
+  function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (!isAuthEnabled()) { next(); return; }
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (isValidSession(token)) { next(); return; }
+    // Password-as-Bearer fallback — goes through its own rate limiter so
+    // brute-force via any protected endpoint is throttled identically to /api/auth.
+    passwordBearerLimiter(req, res, () => {
+      if (!verifyPassword(token)) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      next();
+    });
+  }
 
   // ── POST /api/auth ──────────────────────────────────────────────────────────
   app.post('/api/auth', authLimiter, (req, res) => {
@@ -983,8 +990,16 @@ export function buildApp() {
         })
       );
 
-      // Sort by modified date descending
-      fileInfos.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+      const sortField = typeof req.query.sort === 'string' && ['name', 'size', 'modified'].includes(req.query.sort) ? req.query.sort : 'modified';
+      const sortOrder = typeof req.query.order === 'string' && req.query.order === 'asc' ? 'asc' : 'desc';
+
+      fileInfos.sort((a, b) => {
+        let cmp = 0;
+        if (sortField === 'name') cmp = a.name.localeCompare(b.name);
+        else if (sortField === 'size') cmp = a.size - b.size;
+        else cmp = new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
+        return sortOrder === 'asc' ? cmp : -cmp;
+      });
 
       const total = fileInfos.length;
       const offset = (page - 1) * limit;

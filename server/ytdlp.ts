@@ -339,13 +339,13 @@ export function startPlaylistSync(
       playlist.lastSyncError = null;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      log('ERROR', 'Playlist sync failed', { playlistId: playlist.id, error: msg });
+      log('ERROR', `Playlist sync failed for "${playlist.title || playlist.url}" (${playlist.id})`, { playlistId: playlist.id, url: playlist.url, folder: playlist.folderKey, error: msg });
       playlist.lastSyncAt = new Date().toISOString();
       playlist.lastSyncError = msg;
     }
 
     await savePlaylists(currentPlaylists).catch((e) => {
-      log('ERROR', 'Playlist sync: failed to save config', { error: String(e) });
+      log('ERROR', `Playlist sync: failed to save config after syncing "${playlist.title || playlist.url}"`, { playlistId: playlist.id, error: String(e) });
     });
     syncingIds.delete(playlist.id);
   }
@@ -408,7 +408,7 @@ export function startPlaylistSync(
       if (result.title) vs.title = result.title;
       vs.lastAttemptAt = new Date().toISOString();
       savePlaylists(currentPlaylists).catch((e) => {
-        log('ERROR', 'Failed to persist videoStatuses after job complete', { error: String(e) });
+        log('ERROR', `Failed to persist video status for "${pl.title || pl.url}" (video: ${videoId})`, { playlistId, videoId, error: String(e) });
       });
     },
   };

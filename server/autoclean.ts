@@ -94,7 +94,7 @@ async function walkAndClean(
         }
       }
     } catch (err) {
-      log('ERROR', 'Auto-clean: error processing entry', { path: fullPath, error: String(err) });
+      log('ERROR', `Auto-clean: error processing "${path.basename(fullPath)}" in ${dirPath}`, { path: fullPath, error: String(err) });
     }
   }
 
@@ -142,13 +142,13 @@ export function startAutoClean(
 
   // Run initial cleanup with pre-loaded rules
   runCleanup(folderMapping, currentRules, log).catch((err) => {
-    log('ERROR', 'Auto-clean: initial run failed', { error: String(err) });
+    log('ERROR', `Auto-clean: initial run failed (${Object.keys(currentRules).length} rules configured)`, { rules: currentRules, error: String(err) });
   });
 
   // Schedule cleanup every 24 hours
   const interval = setInterval(() => {
     runCleanup(folderMapping, currentRules, log).catch((err) => {
-      log('ERROR', 'Auto-clean: scheduled run failed', { error: String(err) });
+      log('ERROR', `Auto-clean: scheduled run failed (${Object.keys(currentRules).length} rules configured)`, { rules: currentRules, error: String(err) });
     });
   }, MS_PER_DAY);
   interval.unref();
