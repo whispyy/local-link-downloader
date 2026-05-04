@@ -14,7 +14,7 @@ import multer from 'multer';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
-import { writeFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
+import { writeFile, readFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup, getTranscodeStatus } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -392,18 +392,22 @@ export function buildApp() {
   // ── Rate limiters ──────────────────────────────────────────────────────────
   // Each buildApp() call creates its own in-memory rate-limit store, so
   // parallel test instances using different app objects don't share counters.
-  const RATE_LIMIT_CONFIG = {
+  const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many login attempts, please try again later' },
-  };
-  const authLimiter = rateLimit(RATE_LIMIT_CONFIG);
-  // Separate limiter for the password-as-Bearer path in authMiddleware so
-  // brute-force attempts via arbitrary API endpoints are rate-limited the same
-  // way as POST /api/auth.
-  const passwordBearerLimiter = rateLimit(RATE_LIMIT_CONFIG);
+  });
+  // Separate limiter for the password-as-Bearer path — higher limit to allow
+  // API clients using the password directly rather than a session token.
+  const passwordBearerLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' },
+  });
 
   // ── Auth helpers (scoped to this instance) ──────────────────────────────────
   function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -722,8 +726,8 @@ export function buildApp() {
       res.status(400).json({ error: 'Provide a magnet link or .torrent file' });
       return;
     }
-    if (magnet && !magnet.startsWith('magnet:')) {
-      res.status(400).json({ error: 'Invalid magnet link format' });
+    if (magnet && !magnet.startsWith('magnet:') && !magnet.startsWith('http://') && !magnet.startsWith('https://')) {
+      res.status(400).json({ error: 'Invalid torrent input: expected magnet link or http(s) URL to .torrent file' });
       return;
     }
 
@@ -1894,6 +1898,81 @@ export function buildApp() {
       }
       log('ERROR', 'Move file failed', { folderKey, targetFolder, filename, error: String(err) });
       res.status(500).json({ error: 'Failed to move file' });
+    }
+  });
+
+  // ── GET /api/json/:folderKey/:filename ────────────────────────────────────
+  app.get('/api/json/:folderKey/:filename', authMiddleware, async (req, res) => {
+    const { folderKey, filename } = req.params;
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+
+    if (!filename.endsWith('.json')) {
+      res.status(400).json({ error: 'Only .json files are supported' });
+      return;
+    }
+
+    const resolved = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in resolved) {
+      res.status(resolved.status).json({ error: resolved.error });
+      return;
+    }
+
+    try {
+      const raw = await readFile(resolved.fullPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      res.json(parsed);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        res.status(422).json({ error: 'File is not valid JSON' });
+        return;
+      }
+      log('ERROR', 'JSON store read failed', { folderKey, filename, error: String(err) });
+      res.status(500).json({ error: 'Failed to read file' });
+    }
+  });
+
+  // ── PUT /api/json/:folderKey/:filename ────────────────────────────────────
+  app.put('/api/json/:folderKey/:filename', authMiddleware, express.json({ limit: '1mb' }), async (req, res) => {
+    const { folderKey, filename } = req.params;
+    const subpath = typeof req.query.subpath === 'string' ? req.query.subpath : '';
+
+    if (!filename.endsWith('.json')) {
+      res.status(400).json({ error: 'Only .json files are supported' });
+      return;
+    }
+
+    const resolved = resolveFilePath(folderKey, filename, subpath, folderMapping);
+    if ('error' in resolved) {
+      res.status(resolved.status).json({ error: resolved.error });
+      return;
+    }
+
+    try {
+      await stat(resolved.fullPath);
+    } catch {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const body = req.body;
+    if (body === undefined || body === null) {
+      res.status(400).json({ error: 'Request body is required' });
+      return;
+    }
+
+    const tmpPath = resolved.fullPath + '.tmp';
+    try {
+      await writeFile(tmpPath, JSON.stringify(body, null, 2), 'utf-8');
+      await rename(tmpPath, resolved.fullPath);
+      res.json({ ok: true });
+    } catch (err) {
+      await unlink(tmpPath).catch(() => {});
+      log('ERROR', 'JSON store write failed', { folderKey, filename, error: String(err) });
+      res.status(500).json({ error: 'Failed to write file' });
     }
   });
 

@@ -122,19 +122,19 @@ describe('POST /api/auth — auth enabled', () => {
     // Use a fresh app so this test owns its own passwordBearerLimiter counter.
     const freshApp = buildApp();
 
-    // Exhaust the 10-attempt allowance with wrong passwords
-    for (let i = 0; i < 10; i++) {
+    // Exhaust the 100-attempt allowance with wrong passwords
+    for (let i = 0; i < 100; i++) {
       await request(freshApp)
         .get('/api/config')
         .set('Authorization', 'Bearer wrong-password');
     }
 
-    // The 11th wrong-password attempt must be rate-limited
+    // The 101st wrong-password attempt must be rate-limited
     const res = await request(freshApp)
       .get('/api/config')
       .set('Authorization', 'Bearer wrong-password');
 
     expect(res.status).toBe(429);
-    expect(res.body.error).toMatch(/too many login attempts/i);
+    expect(res.body.error).toMatch(/too many requests/i);
   });
 });
