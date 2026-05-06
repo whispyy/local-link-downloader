@@ -570,9 +570,18 @@ export function buildApp() {
       j.updatedAt = new Date().toISOString();
       log('INFO', 'Download started', { jobId, url, fullPath });
 
+      let lastProgressTime = Date.now();
+      let lastProgressBytes = 0;
       const result = await downloadFile(url, fullPath, abortController.signal, (downloaded, total) => {
         const jj = jobs.get(jobId);
         if (jj) {
+          const now = Date.now();
+          const elapsedSec = (now - lastProgressTime) / 1000;
+          if (elapsedSec > 0) {
+            jj.downloadSpeed = Math.round((downloaded - lastProgressBytes) / elapsedSec);
+          }
+          lastProgressTime = now;
+          lastProgressBytes = downloaded;
           jj.downloadedBytes = downloaded;
           if (total !== undefined) jj.totalBytes = total;
           jj.updatedAt = new Date().toISOString();
@@ -581,6 +590,7 @@ export function buildApp() {
 
       j.updatedAt = new Date().toISOString();
       j.abortController = undefined;
+      j.downloadSpeed = undefined;
 
       if (result.cancelled) {
         j.status = 'cancelled';

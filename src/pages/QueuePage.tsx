@@ -24,6 +24,7 @@ interface QueueJob {
   created_at: string;
   updated_at: string;
   type?: 'http' | 'torrent' | 'ytdlp';
+  download_speed?: number;
   ytdlp_percent?: number;
   ytdlp_speed?: string;
   ytdlp_eta?: string;
@@ -100,16 +101,22 @@ function SizeCell({ job }: { job: QueueJob }) {
 
   if (job.status === 'downloading') {
     const dl = job.downloaded_bytes ?? 0;
+    const speedStr = job.download_speed ? `${formatBytes(job.download_speed)}/s` : null;
     if (job.total_bytes) {
       const pct = Math.min(100, Math.round((dl / job.total_bytes) * 100));
       return (
         <span className="text-th-text-dim whitespace-nowrap">
           {formatBytes(dl)} / {formatBytes(job.total_bytes)}
-          <span className="ml-1 text-xs text-th-text-faint">({pct}%)</span>
+          <span className="ml-1 text-xs text-th-text-faint">({pct}%{speedStr ? ` · ${speedStr}` : ''})</span>
         </span>
       );
     }
-    return <span className="text-th-text-dim whitespace-nowrap">{formatBytes(dl)}</span>;
+    return (
+      <span className="text-th-text-dim whitespace-nowrap">
+        {formatBytes(dl)}
+        {speedStr ? <span className="ml-1 text-xs text-th-text-faint">({speedStr})</span> : null}
+      </span>
+    );
   }
 
   if (job.total_bytes != null) {
