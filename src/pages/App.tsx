@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
-import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, Youtube } from 'lucide-react';
+import { Download, Loader2, CheckCircle, XCircle, Clock, Upload, Link, UploadCloud, Magnet, Youtube, Info } from 'lucide-react';
 import NavBar from '../components/NavBar';
 import { isTerminalTransition, sendJobNotification } from '../notifications';
 import { formatBytes } from '../utils';
@@ -827,8 +827,12 @@ function FolderSelect({ folders, value, onChange, freeSpace }: { folders: string
 function AllowedExtensionsHint({ extensions }: { extensions: string[] }) {
   if (extensions.length === 0) return null;
   return (
-    <div className="text-sm text-th-text-dim bg-th-bg-alt p-3 rounded-lg">
-      <strong>Allowed extensions:</strong> {extensions.join(', ')}
+    <div className="group relative inline-flex items-center gap-1.5 text-xs text-th-text-faint cursor-default self-start">
+      <Info className="w-3.5 h-3.5 shrink-0" />
+      <span>{extensions.length} extension{extensions.length !== 1 ? 's' : ''} allowed</span>
+      <div className="pointer-events-none absolute bottom-full left-0 mb-2 hidden group-hover:block z-20 bg-th-bg border border-th-border-light rounded-lg shadow-lg px-3 py-2 text-xs text-th-text-dim leading-relaxed max-w-[280px] break-words">
+        {extensions.join(', ')}
+      </div>
     </div>
   );
 }
