@@ -47,7 +47,7 @@ export function usePullToRefresh(onRefresh: () => Promise<void>, isDraggingRef?:
 
     const onTouchMove = (e: TouchEvent) => {
       if (!pulling.current || refreshingRef.current || isDraggingRef?.current) {
-        if (isDraggingRef?.current) { pulling.current = false; currentDistance.current = 0; }
+        if (isDraggingRef?.current) { pulling.current = false; currentDistance.current = 0; scheduleUpdate(0); }
         return;
       }
       const dy = e.touches[0].clientY - startY.current;

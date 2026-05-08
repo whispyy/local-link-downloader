@@ -13,7 +13,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { constants as fsConstants, createWriteStream, existsSync, mkdirSync } from 'fs';
+import { constants as fsConstants, createWriteStream, existsSync, mkdirSync, readFileSync } from 'fs';
 import { writeFile, readFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup, getTranscodeStatus } from './transcode';
@@ -45,6 +45,7 @@ export interface DownloadJob {
   abortController?: AbortController;
   // Torrent-specific
   type?: 'http' | 'torrent' | 'ytdlp';
+  format?: 'video' | 'audio';
   peers?: number;
   downloadSpeed?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -348,6 +349,7 @@ function serializeJob(job: DownloadJob) {
     ytdlp_eta: job.ytdlpEta,
     ytdlp_phase: job.ytdlpPhase,
     video_id: job.videoId,
+    format: job.format,
   };
 }
 
@@ -355,6 +357,21 @@ const JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 function scheduleJobExpiry(jobs: Map<string, DownloadJob>, jobId: string): void {
   setTimeout(() => { jobs.delete(jobId); }, JOB_TTL_MS).unref();
+}
+
+// ─── Queue persistence ────────────────────────────────────────────────────────
+
+interface PersistedJob {
+  id: string;
+  url: string;
+  folderKey: string;
+  filename: string;
+  destPath: string;
+  type: 'http' | 'torrent' | 'ytdlp';
+  format?: 'video' | 'audio';
+  videoId?: string;
+  playlistId?: string;
+  createdAt: string;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -374,6 +391,50 @@ export function buildApp() {
   // Per-instance state (isolated between test suites)
   const jobs = new Map<string, DownloadJob>();
 
+  // ── Queue persistence (resolved per-instance so tests can override DATA_DIR) ─
+  const DATA_DIR = process.env.DATA_DIR || './data';
+  const QUEUE_FILE = path.join(DATA_DIR, 'queue.json');
+  const TORRENTS_DIR = path.join(DATA_DIR, 'torrents');
+
+  // Serialised write chain: each call snapshots the current jobs map and writes
+  // after the previous write completes, preventing stale-overwrite races.
+  let _saveQueueChain = Promise.resolve();
+  function saveQueue(): void {
+    _saveQueueChain = _saveQueueChain
+      .then(async () => {
+        const active: PersistedJob[] = [];
+        for (const job of jobs.values()) {
+          if (job.status !== 'queued' && job.status !== 'downloading') continue;
+          active.push({
+            id: job.id,
+            url: job.url,
+            folderKey: job.folderKey,
+            filename: job.filename,
+            destPath: job.destPath,
+            type: job.type || 'http',
+            format: job.format,
+            videoId: job.videoId,
+            playlistId: job.playlistId,
+            createdAt: job.createdAt,
+          });
+        }
+        if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+        await writeFile(QUEUE_FILE, JSON.stringify(active, null, 2) + '\n', 'utf-8');
+      })
+      .catch(() => {}); // non-fatal
+  }
+
+  function loadQueueSync(): PersistedJob[] {
+    try {
+      const raw = readFileSync(QUEUE_FILE, 'utf-8');
+      return JSON.parse(raw) as PersistedJob[];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        log('WARN', 'Failed to parse queue.json, starting with empty queue', { error: String(err) });
+      }
+      return [];
+    }
+  }
 
   // Parse once at startup — DOWNLOAD_FOLDERS is static for the lifetime of the process
   const folderMapping = parseFolderMapping(process.env.DOWNLOAD_FOLDERS || '');
@@ -403,7 +464,7 @@ export function buildApp() {
   // API clients using the password directly rather than a session token.
   const passwordBearerLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 150,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
@@ -543,77 +604,7 @@ export function buildApp() {
       mkdirSync(destinationFolder, { recursive: true });
     }
 
-    const jobId = randomUUID();
-    const now = new Date().toISOString();
-    const abortController = new AbortController();
-
-    const job: DownloadJob = {
-      id: jobId,
-      url,
-      folderKey,
-      filename,
-      destPath: fullPath,
-      status: 'queued',
-      createdAt: now,
-      updatedAt: now,
-      abortController,
-    };
-
-    jobs.set(jobId, job);
-    log('INFO', 'Download job created', { jobId, url, folderKey, filename });
-    notifyDiscord(`⬇️ Download started: **${filename}** → \`${folderKey}\``);
-
-    setImmediate(async () => {
-      const j = jobs.get(jobId)!;
-      j.status = 'downloading';
-      j.downloadedBytes = 0;
-      j.updatedAt = new Date().toISOString();
-      log('INFO', 'Download started', { jobId, url, fullPath });
-
-      let lastProgressTime = Date.now();
-      let lastProgressBytes = 0;
-      const result = await downloadFile(url, fullPath, abortController.signal, (downloaded, total) => {
-        const jj = jobs.get(jobId);
-        if (jj) {
-          const now = Date.now();
-          const elapsedSec = (now - lastProgressTime) / 1000;
-          if (elapsedSec > 0) {
-            jj.downloadSpeed = Math.round((downloaded - lastProgressBytes) / elapsedSec);
-          }
-          lastProgressTime = now;
-          lastProgressBytes = downloaded;
-          jj.downloadedBytes = downloaded;
-          if (total !== undefined) jj.totalBytes = total;
-          jj.updatedAt = new Date().toISOString();
-        }
-      });
-
-      j.updatedAt = new Date().toISOString();
-      j.abortController = undefined;
-      j.downloadSpeed = undefined;
-
-      if (result.cancelled) {
-        j.status = 'cancelled';
-        j.message = 'Download cancelled';
-        log('INFO', 'Download cancelled', { jobId });
-        unlink(fullPath).catch(() => {});
-      } else if (result.success) {
-        j.status = 'done';
-        j.downloadedBytes = result.totalBytes;
-        j.totalBytes = result.totalBytes;
-        j.message = `Downloaded to ${fullPath}`;
-        log('INFO', 'Download completed', { jobId, fullPath });
-        notifyDiscord(`✅ Download completed: **${j.filename}** → \`${j.folderKey}\`${result.totalBytes ? ` (${formatBytes(result.totalBytes)})` : ''}`);
-      } else {
-        j.status = 'error';
-        j.message = result.message;
-        log('ERROR', 'Download failed', { jobId, error: result.message });
-        notifyDiscord(`❌ Download failed: **${j.filename}** → \`${j.folderKey}\``);
-      }
-
-      // .unref() prevents this timer from keeping the Node process alive in tests
-      scheduleJobExpiry(jobs, jobId);
-    });
+    const jobId = launchHttpJob({ url, folderKey, destPath: fullPath, filename });
 
     res.json({ id: jobId, status: 'queued' });
   });
@@ -752,103 +743,11 @@ export function buildApp() {
       mkdirSync(destinationFolder, { recursive: true });
     }
 
-    const jobId = randomUUID();
-    const now = new Date().toISOString();
-    const torrentInput = magnet || torrentBuffer!;
-
-    const job: DownloadJob = {
-      id: jobId,
-      url: magnet || '[torrent file]',
+    const jobId = launchTorrentJob({
+      torrentInput: magnet || torrentBuffer!,
       folderKey,
-      filename: '',
-      destPath: destinationFolder,
-      status: 'queued',
-      type: 'torrent',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    jobs.set(jobId, job);
-    log('INFO', 'Torrent job created', { jobId, folderKey });
-    notifyDiscord(`🧲 Torrent started → \`${folderKey}\``);
-
-    setImmediate(async () => {
-      const j = jobs.get(jobId);
-      if (!j || j.status === 'cancelled') {
-        // Job was cancelled before we got here — just ensure cleanup timer is set
-        if (j) scheduleJobExpiry(jobs, jobId);
-        return;
-      }
-      j.status = 'downloading';
-      j.downloadedBytes = 0;
-      j.updatedAt = new Date().toISOString();
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let client: any;
-      try {
-        client = await getWTClient();
-      } catch (err) {
-        j.status = 'error';
-        j.message = err instanceof Error ? err.message : 'Failed to initialize torrent client';
-        j.updatedAt = new Date().toISOString();
-        return;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const torrent = client.add(torrentInput, { path: destinationFolder }, (t: any) => {
-        const jj = jobs.get(jobId);
-        if (jj) {
-          jj.filename = t.name;
-          jj.totalBytes = t.length || undefined;
-          jj.updatedAt = new Date().toISOString();
-        }
-      });
-
-      j.torrentRef = torrent;
-
-      const progressInterval = setInterval(() => {
-        const jj = jobs.get(jobId);
-        if (!jj || jj.status !== 'downloading') { clearInterval(progressInterval); return; }
-        jj.downloadedBytes = torrent.downloaded;
-        if (torrent.length) jj.totalBytes = torrent.length;
-        if (torrent.name && !jj.filename) jj.filename = torrent.name;
-        jj.peers = torrent.numPeers;
-        jj.downloadSpeed = Math.round(torrent.downloadSpeed);
-        jj.updatedAt = new Date().toISOString();
-      }, 500);
-
-      torrent.on('done', () => {
-        clearInterval(progressInterval);
-        const jj = jobs.get(jobId);
-        if (!jj) return;
-        jj.status = 'done';
-        jj.downloadedBytes = torrent.length;
-        jj.totalBytes = torrent.length;
-        jj.filename = torrent.name;
-        jj.peers = undefined;
-        jj.downloadSpeed = undefined;
-        jj.message = `Downloaded to ${destinationFolder}`;
-        jj.torrentRef = undefined;
-        jj.updatedAt = new Date().toISOString();
-        log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
-        notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\`${torrent.length ? ` (${formatBytes(torrent.length)})` : ''}`);
-        torrent.destroy();
-        scheduleJobExpiry(jobs, jobId);
-      });
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      torrent.on('error', (err: any) => {
-        clearInterval(progressInterval);
-        const jj = jobs.get(jobId);
-        if (!jj) return;
-        jj.status = 'error';
-        jj.message = err instanceof Error ? err.message : String(err);
-        jj.torrentRef = undefined;
-        jj.updatedAt = new Date().toISOString();
-        log('ERROR', 'Torrent error', { jobId, error: jj.message });
-        notifyDiscord(`❌ Torrent failed: **${jj.filename || 'unknown'}** → \`${folderKey}\``);
-        scheduleJobExpiry(jobs, jobId);
-      });
+      destinationFolder,
+      url: magnet || '[torrent file]',
     });
 
     res.json({ id: jobId, status: 'queued', type: 'torrent' });
@@ -882,8 +781,10 @@ export function buildApp() {
     if (job.type === 'torrent' && job.torrentRef) {
       job.torrentRef.destroy();
       job.torrentRef = undefined;
+      unlink(path.join(TORRENTS_DIR, `${jobId}.torrent`)).catch(() => {});
       scheduleJobExpiry(jobs, jobId);
     }
+    saveQueue();
     log('INFO', 'Job cancelled', { jobId });
     res.json({ id: jobId, status: 'cancelled' });
   });
@@ -1332,12 +1233,14 @@ export function buildApp() {
 
   // ── Shared yt-dlp job launcher ────────────────────────────────────────────
   function launchYtdlpJob(opts: {
+    id?: string;
     url: string;
     folderKey: string;
     destinationFolder: string;
     format: 'video' | 'audio';
     videoId?: string;
     playlistId?: string;
+    filenameHint?: string;
   }): string {
     const { url, folderKey, destinationFolder, format, videoId, playlistId } = opts;
 
@@ -1345,7 +1248,7 @@ export function buildApp() {
       mkdirSync(destinationFolder, { recursive: true });
     }
 
-    const jobId = randomUUID();
+    const jobId = opts.id || randomUUID();
     const now = new Date().toISOString();
     const abortController = new AbortController();
 
@@ -1353,10 +1256,11 @@ export function buildApp() {
       id: jobId,
       url,
       folderKey,
-      filename: '',
+      filename: opts.filenameHint || '',
       destPath: destinationFolder,
       status: 'queued',
       type: 'ytdlp',
+      format,
       videoId,
       playlistId,
       createdAt: now,
@@ -1365,6 +1269,7 @@ export function buildApp() {
     };
 
     jobs.set(jobId, job);
+    saveQueue();
     log('INFO', 'yt-dlp job created', { jobId, url, folderKey, format, videoId });
     notifyDiscord(`🎬 yt-dlp ${format} download started → \`${folderKey}\``);
 
@@ -1388,6 +1293,7 @@ export function buildApp() {
         if (title) {
           j.filename = title;
           j.updatedAt = new Date().toISOString();
+          saveQueue();
         }
 
         j.status = 'downloading';
@@ -1447,6 +1353,7 @@ export function buildApp() {
           if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, error: result.message, title: j.filename || undefined });
         }
 
+        saveQueue();
         scheduleJobExpiry(jobs, jobId);
       })().catch((err) => {
         log('ERROR', 'yt-dlp job unexpected error', { jobId, error: String(err) });
@@ -1455,9 +1362,229 @@ export function buildApp() {
           j.status = 'error';
           j.message = `Unexpected error: ${err}`;
           j.abortController = undefined;
+          saveQueue();
           scheduleJobExpiry(jobs, jobId);
         }
         if (videoId && playlistId) playlistSync.handleJobComplete(playlistId, videoId, { success: false, error: String(err) });
+      });
+    });
+
+    return jobId;
+  }
+
+  // ── Shared HTTP download launcher ─────────────────────────────────────────
+  function launchHttpJob(opts: {
+    id?: string;
+    url: string;
+    folderKey: string;
+    destPath: string;
+    filename: string;
+    createdAt?: string;
+  }): string {
+    const { url, folderKey, destPath, filename } = opts;
+    const jobId = opts.id || randomUUID();
+    const now = opts.createdAt || new Date().toISOString();
+    const abortController = new AbortController();
+
+    const job: DownloadJob = {
+      id: jobId,
+      url,
+      folderKey,
+      filename,
+      destPath,
+      status: 'queued',
+      type: 'http',
+      createdAt: now,
+      updatedAt: now,
+      abortController,
+    };
+
+    jobs.set(jobId, job);
+    saveQueue();
+    log('INFO', 'Download job created', { jobId, url, folderKey, filename });
+    notifyDiscord(`⬇️ Download started: **${filename}** → \`${folderKey}\``);
+
+    setImmediate(async () => {
+      const j = jobs.get(jobId)!;
+      j.status = 'downloading';
+      j.downloadedBytes = 0;
+      j.updatedAt = new Date().toISOString();
+      log('INFO', 'Download started', { jobId, url, destPath });
+
+      let lastProgressTime = Date.now();
+      let lastProgressBytes = 0;
+      const result = await downloadFile(url, destPath, abortController.signal, (downloaded, total) => {
+        const jj = jobs.get(jobId);
+        if (jj) {
+          const now = Date.now();
+          const elapsedSec = (now - lastProgressTime) / 1000;
+          if (elapsedSec > 0) {
+            jj.downloadSpeed = Math.round((downloaded - lastProgressBytes) / elapsedSec);
+          }
+          lastProgressTime = now;
+          lastProgressBytes = downloaded;
+          jj.downloadedBytes = downloaded;
+          if (total !== undefined) jj.totalBytes = total;
+          jj.updatedAt = new Date().toISOString();
+        }
+      });
+
+      j.updatedAt = new Date().toISOString();
+      j.abortController = undefined;
+      j.downloadSpeed = undefined;
+
+      if (result.cancelled) {
+        j.status = 'cancelled';
+        j.message = 'Download cancelled';
+        log('INFO', 'Download cancelled', { jobId });
+        unlink(destPath).catch(() => {});
+      } else if (result.success) {
+        j.status = 'done';
+        j.downloadedBytes = result.totalBytes;
+        j.totalBytes = result.totalBytes;
+        j.message = `Downloaded to ${destPath}`;
+        log('INFO', 'Download completed', { jobId, destPath });
+        notifyDiscord(`✅ Download completed: **${j.filename}** → \`${j.folderKey}\`${result.totalBytes ? ` (${formatBytes(result.totalBytes)})` : ''}`);
+      } else {
+        j.status = 'error';
+        j.message = result.message;
+        log('ERROR', 'Download failed', { jobId, error: result.message });
+        notifyDiscord(`❌ Download failed: **${j.filename}** → \`${j.folderKey}\``);
+      }
+
+      saveQueue();
+      // .unref() prevents this timer from keeping the Node process alive in tests
+      scheduleJobExpiry(jobs, jobId);
+    });
+
+    return jobId;
+  }
+
+  // ── Shared torrent job launcher ───────────────────────────────────────────
+  function launchTorrentJob(opts: {
+    id?: string;
+    torrentInput: string | Buffer;
+    folderKey: string;
+    destinationFolder: string;
+    url: string;
+    filename?: string;
+    createdAt?: string;
+  }): string {
+    const { torrentInput, folderKey, destinationFolder, url } = opts;
+    const jobId = opts.id || randomUUID();
+    const now = opts.createdAt || new Date().toISOString();
+    const abortController = new AbortController();
+
+    const job: DownloadJob = {
+      id: jobId,
+      url,
+      folderKey,
+      filename: opts.filename || '',
+      destPath: destinationFolder,
+      status: 'queued',
+      type: 'torrent',
+      createdAt: now,
+      updatedAt: new Date().toISOString(),
+      abortController,
+    };
+
+    jobs.set(jobId, job);
+    saveQueue();
+    log('INFO', 'Torrent job created', { jobId, folderKey });
+    notifyDiscord(`🧲 Torrent started → \`${folderKey}\``);
+
+    setImmediate(async () => {
+      // Persist .torrent buffer to disk so it can survive a restart
+      if (Buffer.isBuffer(torrentInput)) {
+        try {
+          if (!existsSync(TORRENTS_DIR)) mkdirSync(TORRENTS_DIR, { recursive: true });
+          await writeFile(path.join(TORRENTS_DIR, `${jobId}.torrent`), torrentInput);
+        } catch {
+          // non-fatal — torrent won't survive a restart but current session continues
+        }
+      }
+
+      const j = jobs.get(jobId);
+      if (!j || j.status === 'cancelled') {
+        unlink(path.join(TORRENTS_DIR, `${jobId}.torrent`)).catch(() => {});
+        if (j) scheduleJobExpiry(jobs, jobId);
+        return;
+      }
+      j.status = 'downloading';
+      j.downloadedBytes = 0;
+      j.updatedAt = new Date().toISOString();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let client: any;
+      try {
+        client = await getWTClient();
+      } catch (err) {
+        j.status = 'error';
+        j.message = err instanceof Error ? err.message : 'Failed to initialize torrent client';
+        j.updatedAt = new Date().toISOString();
+        saveQueue();
+        scheduleJobExpiry(jobs, jobId);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const torrent = client.add(torrentInput, { path: destinationFolder }, (t: any) => {
+        const jj = jobs.get(jobId);
+        if (jj) {
+          jj.filename = t.name;
+          jj.totalBytes = t.length || undefined;
+          jj.updatedAt = new Date().toISOString();
+        }
+      });
+
+      j.torrentRef = torrent;
+
+      const progressInterval = setInterval(() => {
+        const jj = jobs.get(jobId);
+        if (!jj || jj.status !== 'downloading') { clearInterval(progressInterval); return; }
+        jj.downloadedBytes = torrent.downloaded;
+        if (torrent.length) jj.totalBytes = torrent.length;
+        if (torrent.name && !jj.filename) jj.filename = torrent.name;
+        jj.peers = torrent.numPeers;
+        jj.downloadSpeed = Math.round(torrent.downloadSpeed);
+        jj.updatedAt = new Date().toISOString();
+      }, 500);
+
+      torrent.on('done', () => {
+        clearInterval(progressInterval);
+        const jj = jobs.get(jobId);
+        if (!jj) return;
+        jj.status = 'done';
+        jj.downloadedBytes = torrent.length;
+        jj.totalBytes = torrent.length;
+        jj.filename = torrent.name;
+        jj.peers = undefined;
+        jj.downloadSpeed = undefined;
+        jj.message = `Downloaded to ${destinationFolder}`;
+        jj.torrentRef = undefined;
+        jj.updatedAt = new Date().toISOString();
+        log('INFO', 'Torrent completed', { jobId, name: torrent.name, bytes: torrent.length });
+        notifyDiscord(`✅ Torrent completed: **${torrent.name}** → \`${folderKey}\`${torrent.length ? ` (${formatBytes(torrent.length)})` : ''}`);
+        torrent.destroy();
+        unlink(path.join(TORRENTS_DIR, `${jobId}.torrent`)).catch(() => {});
+        saveQueue();
+        scheduleJobExpiry(jobs, jobId);
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      torrent.on('error', (err: any) => {
+        clearInterval(progressInterval);
+        const jj = jobs.get(jobId);
+        if (!jj) return;
+        jj.status = 'error';
+        jj.message = err instanceof Error ? err.message : String(err);
+        jj.torrentRef = undefined;
+        jj.updatedAt = new Date().toISOString();
+        log('ERROR', 'Torrent error', { jobId, error: jj.message });
+        notifyDiscord(`❌ Torrent failed: **${jj.filename || 'unknown'}** → \`${folderKey}\``);
+        unlink(path.join(TORRENTS_DIR, `${jobId}.torrent`)).catch(() => {});
+        saveQueue();
+        scheduleJobExpiry(jobs, jobId);
       });
     });
 
@@ -2022,6 +2149,80 @@ export function buildApp() {
       res.sendFile(path.resolve(STATIC_DIR, 'index.html'));
     });
   }
+
+  // ── Restart recovery: re-enqueue jobs that were active before shutdown ───────
+  setImmediate(async () => {
+    const persisted = loadQueueSync();
+    if (persisted.length === 0) return;
+    log('WARN', `Queue recovery: re-enqueuing ${persisted.length} job(s) from previous run`);
+
+    for (const pj of persisted) {
+      if (!folderMapping.has(pj.folderKey)) {
+        log('WARN', 'Queue recovery: skipping job with unknown folderKey', { jobId: pj.id, folderKey: pj.folderKey });
+        continue;
+      }
+      const destinationFolder = folderMapping.get(pj.folderKey)!;
+
+      if (pj.type === 'ytdlp') {
+        if (!pj.format) {
+          log('WARN', 'Queue recovery: skipping ytdlp job with no format', { jobId: pj.id });
+          continue;
+        }
+        log('INFO', 'Queue recovery: re-launching yt-dlp job', { jobId: pj.id, url: pj.url });
+        launchYtdlpJob({
+          id: pj.id,
+          url: pj.url,
+          folderKey: pj.folderKey,
+          destinationFolder,
+          format: pj.format,
+          videoId: pj.videoId,
+          playlistId: pj.playlistId,
+          filenameHint: pj.filename || undefined,
+        });
+
+      } else if (pj.type === 'torrent') {
+        let torrentInput: string | Buffer;
+        if (pj.url === '[torrent file]') {
+          const savedPath = path.join(TORRENTS_DIR, `${pj.id}.torrent`);
+          if (!existsSync(savedPath)) {
+            log('WARN', 'Queue recovery: .torrent file missing, skipping', { jobId: pj.id });
+            continue;
+          }
+          try {
+            torrentInput = readFileSync(savedPath);
+          } catch {
+            log('WARN', 'Queue recovery: failed to read .torrent file, skipping', { jobId: pj.id });
+            continue;
+          }
+        } else {
+          torrentInput = pj.url; // magnet or http URL
+        }
+        log('INFO', 'Queue recovery: re-launching torrent job', { jobId: pj.id });
+        launchTorrentJob({
+          id: pj.id,
+          torrentInput,
+          folderKey: pj.folderKey,
+          destinationFolder,
+          url: pj.url,
+          filename: pj.filename,
+          createdAt: pj.createdAt,
+        });
+
+      } else {
+        // type === 'http'
+        log('INFO', 'Queue recovery: re-launching HTTP job', { jobId: pj.id, url: pj.url });
+        launchHttpJob({
+          id: pj.id,
+          url: pj.url,
+          folderKey: pj.folderKey,
+          destPath: pj.destPath,
+          filename: pj.filename,
+          createdAt: pj.createdAt,
+        });
+      }
+    }
+    saveQueue(); // flush any skipped dead entries from queue.json
+  });
 
   return app;
 }
