@@ -573,6 +573,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Rename failed' }));
         setError(data.error || 'Rename failed');
+        setRenamingBreadcrumb(false);
+        setRenameBreadcrumbValue('');
         return;
       }
       // Update subpath to reflect the new name
@@ -582,6 +584,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       fetchFiles();
     } catch {
       setError('Failed to rename folder');
+      setRenamingBreadcrumb(false);
+      setRenameBreadcrumbValue('');
     } finally {
       setRenameBreadcrumbLoading(false);
     }
