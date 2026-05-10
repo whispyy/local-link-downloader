@@ -25,6 +25,22 @@ function waitForRecovery(): Promise<void> {
   return new Promise((r) => setImmediate(r));
 }
 
+/** Poll until all jobs leave active states (queued/downloading) or timeout. */
+async function waitForJobsToSettle(
+  app: ReturnType<typeof buildApp>,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await request(app).get('/api/jobs');
+    const active = (res.body as Array<{ status: string }>).filter(
+      (j) => j.status === 'queued' || j.status === 'downloading',
+    );
+    if (active.length === 0) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 // ─── QR1 + QR2 — Happy-path recovery ─────────────────────────────────────────
 
 describe('Queue recovery — re-enqueues active jobs', () => {
@@ -69,7 +85,11 @@ describe('Queue recovery — re-enqueues active jobs', () => {
     await waitForRecovery();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    // Wait for spawned yt-dlp / HTTP jobs to settle before shutdown so
+    // child process handles are fully closed and don't leak into teardown.
+    await waitForJobsToSettle(app);
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -137,6 +157,7 @@ describe('Queue recovery — skips job with unknown folderKey', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -173,6 +194,7 @@ describe('Queue recovery — handles corrupt queue.json gracefully', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });

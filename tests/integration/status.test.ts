@@ -24,6 +24,7 @@ describe('GET /api/status/:jobId', () => {
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `files:${tmpDir}`,
       ALLOWED_EXTENSIONS: undefined,
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
 
@@ -37,6 +38,7 @@ describe('GET /api/status/:jobId', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });

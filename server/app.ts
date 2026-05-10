@@ -2224,5 +2224,16 @@ export function buildApp() {
     saveQueue(); // flush any skipped dead entries from queue.json
   });
 
-  return app;
+  function shutdown(): void {
+    playlistSync.stop();
+    for (const job of jobs.values()) {
+      if (job.abortController) {
+        job.status = 'cancelled';
+        job.abortController.abort();
+      }
+    }
+  }
+
+  (app as express.Express & { shutdown: () => void }).shutdown = shutdown;
+  return app as express.Express & { shutdown: () => void };
 }

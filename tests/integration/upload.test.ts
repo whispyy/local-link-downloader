@@ -30,11 +30,13 @@ describe('POST /api/upload', () => {
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `files:${tmpDir}`,
       ALLOWED_EXTENSIONS: '.txt,.jpg,.png',
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
