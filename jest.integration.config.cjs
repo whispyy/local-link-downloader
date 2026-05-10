@@ -29,4 +29,5 @@ module.exports = {
 
   // Verbose output so each scenario is clearly visible
   verbose: true,
+
 };

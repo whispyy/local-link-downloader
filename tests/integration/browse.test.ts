@@ -93,11 +93,13 @@ describe('GET /api/browse', () => {
     setEnv({
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -162,6 +164,7 @@ describe('GET /api/browse', () => {
     expect(res.body.files).toEqual([]);
     expect(res.body.total).toBe(0);
 
+    app.shutdown();
     resetEnv();
     rmSync(emptyDir, { recursive: true, force: true });
   });
@@ -254,11 +257,13 @@ describe('DELETE /api/browse/:folderKey/:filename', () => {
     setEnv({
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -332,11 +337,13 @@ describe('POST /api/browse/:folderKey/:filename/move', () => {
     setEnv({
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `source:${srcDir};target:${dstDir}`,
+      DATA_DIR: srcDir,
     });
     app = buildApp();
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(srcDir, { recursive: true, force: true });
     rmSync(dstDir, { recursive: true, force: true });
@@ -454,11 +461,13 @@ describe('POST /api/browse — move auth required', () => {
     setEnv({
       APP_PASSWORD: 'secret123',
       DOWNLOAD_FOLDERS: `source:${srcDir};target:${dstDir}`,
+      DATA_DIR: srcDir,
     });
     app = buildApp();
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(srcDir, { recursive: true, force: true });
     rmSync(dstDir, { recursive: true, force: true });
@@ -486,11 +495,13 @@ describe('GET /api/browse — auth required', () => {
     setEnv({
       APP_PASSWORD: 'secret123',
       DOWNLOAD_FOLDERS: `files:${tmpDir}`,
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -566,11 +577,13 @@ describe('GET /api/browse — subfolder navigation', () => {
     setEnv({
       APP_PASSWORD: undefined,
       DOWNLOAD_FOLDERS: `media:${tmpDir}`,
+      DATA_DIR: tmpDir,
     });
     app = buildApp();
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -682,6 +695,7 @@ describe('POST /api/browse/:folderKey/mkdir', () => {
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -755,6 +769,7 @@ describe('POST /api/browse/:folderKey/mkdir — auth required', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -790,6 +805,7 @@ describe('POST /api/browse/:folderKey/:filename/move-to-subpath', () => {
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -871,6 +887,7 @@ describe('POST /api/browse/:folderKey/:filename/move-to-subpath — auth require
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -905,6 +922,7 @@ describe('POST /api/browse/:folderKey/rename-dir', () => {
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -987,6 +1005,7 @@ describe('POST /api/browse/:folderKey/rename-dir — auth required', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -1022,6 +1041,7 @@ describe('DELETE /api/browse/:folderKey/rmdir', () => {
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -1069,6 +1089,7 @@ describe('DELETE /api/browse/:folderKey/rmdir — auth required', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -1103,6 +1124,7 @@ describe('POST /api/browse/:folderKey/rename-file', () => {
   });
 
   afterEach(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -1200,6 +1222,7 @@ describe('POST /api/browse/:folderKey/rename-file — auth required', () => {
   });
 
   afterAll(() => {
+    app.shutdown();
     resetEnv();
     rmSync(tmpDir, { recursive: true, force: true });
   });

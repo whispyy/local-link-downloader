@@ -139,6 +139,11 @@ export function runYtdlp(
     let child: ChildProcess;
     try {
       child = spawn('yt-dlp', args, { cwd: destDir, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.unref();
+      // Prevent the stdio pipe handles from keeping the event loop alive.
+      // These are net.Socket instances and support unref().
+      (child.stdout as unknown as { unref?: () => void })?.unref?.();
+      (child.stderr as unknown as { unref?: () => void })?.unref?.();
     } catch (err) {
       resolve({ success: false, message: `Failed to spawn yt-dlp: ${err}` });
       return;
@@ -183,6 +188,8 @@ export function runYtdlp(
       if (resolved) return;
       resolved = true;
       signal.removeEventListener('abort', onAbort);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       resolve({ success: false, message: `yt-dlp process error: ${err.message}` });
     });
 
@@ -297,6 +304,7 @@ export interface PlaylistSyncHandle {
   syncPlaylist(id: string): Promise<void>;
   syncAll(): Promise<void>;
   handleJobComplete(playlistId: string, videoId: string, result: JobCompleteResult): void;
+  stop(): void;
 }
 
 export function startPlaylistSync(
@@ -390,6 +398,10 @@ export function startPlaylistSync(
       for (const pl of currentPlaylists) {
         if (pl.enabled) await syncOne(pl);
       }
+    },
+    stop() {
+      clearTimeout(startTimer);
+      clearInterval(interval);
     },
     handleJobComplete(playlistId: string, videoId: string, result: JobCompleteResult) {
       const pl = currentPlaylists.find((p) => p.id === playlistId);

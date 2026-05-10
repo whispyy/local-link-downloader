@@ -87,11 +87,12 @@ describe('Discord notifications', () => {
         DOWNLOAD_FOLDERS: `files:${tmpDir}`,
         ALLOWED_EXTENSIONS: '.txt',
         DISCORD_WEBHOOK_URL: undefined,
+        DATA_DIR: tmpDir,
       });
       app = buildApp();
     });
 
-    afterAll(() => resetEnv());
+    afterAll(() => { app.shutdown(); resetEnv(); });
 
     it('N1 — upload does not trigger any fetch call', async () => {
       await request(app)
@@ -117,11 +118,12 @@ describe('Discord notifications', () => {
         DOWNLOAD_FOLDERS: `files:${tmpDir}`,
         ALLOWED_EXTENSIONS: '.txt',
         DISCORD_WEBHOOK_URL: WEBHOOK,
+        DATA_DIR: tmpDir,
       });
       app = buildApp();
     });
 
-    afterAll(() => resetEnv());
+    afterAll(() => { app.shutdown(); resetEnv(); });
 
     it('N2 — upload sends start and completed notifications', async () => {
       const res = await request(app)
@@ -239,6 +241,7 @@ describe('Discord error notifications', () => {
     });
 
     afterAll(() => {
+      app.shutdown();
       chmodSync(tmpDir, 0o755);
       resetEnv();
       rmSync(tmpDir, { recursive: true, force: true });
@@ -276,6 +279,7 @@ describe('Discord error notifications', () => {
     });
 
     afterAll(() => {
+      app.shutdown();
       chmodSync(tmpDir, 0o755);
       resetEnv();
       rmSync(tmpDir, { recursive: true, force: true });
