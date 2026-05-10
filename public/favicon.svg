@@ -1,20 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#1e3a8a"/>
-    </linearGradient>
-  </defs>
+  <!-- Background: solid dark -->
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
 
-  <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Arrow shaft -->
+  <rect x="238" y="49" width="36" height="168" rx="18" fill="white"/>
 
-  <!-- Cyan download arrow — smaller, tip lands on the house roof peak -->
-  <rect x="238" y="32" width="36" height="110" rx="18" fill="#22d3ee"/>
-  <path d="M 170 137 L 256 222 L 342 137 Z" fill="#22d3ee"/>
+  <!-- Arrow head (filled triangle) -->
+  <path d="M 160 189 L 256 293 L 352 189 Z" fill="white"/>
 
-  <!-- House outline — taller, roof peak aligns with the arrow tip -->
-  <path d="M 80 345 L 256 240 L 432 345 L 432 456 L 80 456 Z"
-        fill="none" stroke="white" stroke-width="36"
+  <!-- House / pentagon -->
+  <path d="M 120 411 L 256 329 L 392 411 L 392 449 L 120 449 Z"
+        fill="none" stroke="white" stroke-width="28"
         stroke-linejoin="round" stroke-linecap="round"/>
 </svg>
