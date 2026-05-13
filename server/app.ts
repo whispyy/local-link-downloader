@@ -163,7 +163,7 @@ export function validateSubpath(subpath: string): string | null {
   if (subpath.includes('..')) return 'Path traversal not allowed';
   const segments = subpath.split('/');
   if (segments.some(s => s === '')) return 'Empty path segment';
-  if (segments.length > 2) return 'Max depth of 2 exceeded';
+  if (segments.length > 4) return 'Max depth of 4 exceeded';
   return null;
 }
 
@@ -665,7 +665,13 @@ export function buildApp() {
       return;
     }
 
-    const fullPath = path.join(destinationFolder, filename);
+    const rawSubpath = typeof req.body.subpath === 'string' ? req.body.subpath : '';
+    const subpathErr = validateSubpath(rawSubpath);
+    if (subpathErr) { res.status(400).json({ error: subpathErr }); return; }
+    const { resolved: targetDir, error: resolveErr } = resolveSubpath(destinationFolder, rawSubpath);
+    if (resolveErr) { res.status(400).json({ error: resolveErr }); return; }
+
+    const fullPath = path.join(targetDir, filename);
     const resolvedDest = path.resolve(destinationFolder);
     const resolvedFull = path.resolve(fullPath);
     if (!resolvedFull.startsWith(resolvedDest + path.sep)) {
@@ -673,8 +679,8 @@ export function buildApp() {
       return;
     }
 
-    if (!existsSync(destinationFolder)) {
-      mkdirSync(destinationFolder, { recursive: true });
+    if (!existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true });
     }
 
     notifyDiscord(`⬆️ Upload started: **${filename}** → \`${folderKey}\``);
@@ -881,7 +887,38 @@ export function buildApp() {
     }
 
     if (!existsSync(targetDir)) {
-      res.json({ files: [], dirs: [], total: 0, subpath, maxDepth: 2 });
+      res.json({ files: [], dirs: [], total: 0, subpath, maxDepth: 4 });
+      return;
+    }
+
+    // ── Recursive listing ────────────────────────────────────────────────────
+    if (req.query.recursive === 'true') {
+      const resolvedFolder = path.resolve(folderPath);
+      const allFiles: { name: string; path: string; size: number; modifiedAt: string }[] = [];
+      const walkDir = async (dir: string): Promise<void> => {
+        const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+        for (const entry of entries) {
+          const entryPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            await walkDir(entryPath);
+          } else if (entry.isFile()) {
+            const s = await stat(entryPath).catch(() => null);
+            if (s) allFiles.push({
+              name: entry.name,
+              path: path.relative(resolvedFolder, entryPath).replace(/\\/g, '/'),
+              size: s.size,
+              modifiedAt: s.mtime.toISOString(),
+            });
+          }
+        }
+      };
+      try {
+        await walkDir(targetDir);
+        res.json({ files: allFiles, total: allFiles.length });
+      } catch (err) {
+        log('ERROR', 'Recursive browse failed', { folderKey, error: String(err) });
+        res.status(500).json({ error: 'Failed to list files' });
+      }
       return;
     }
 
@@ -920,17 +957,17 @@ export function buildApp() {
       const offset = (page - 1) * limit;
       const paged = fileInfos.slice(offset, offset + limit);
 
-      // Include directories if current depth < 2
+      // Include directories if current depth < 4
       const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
       let dirs: { name: string }[] = [];
-      if (currentDepth < 2) {
+      if (currentDepth < 4) {
         dirs = entries
           .filter(e => e.isDirectory())
           .map(e => ({ name: e.name }))
           .sort((a, b) => a.name.localeCompare(b.name));
       }
 
-      res.json({ files: paged, dirs, total, page, limit, subpath, maxDepth: 2 });
+      res.json({ files: paged, dirs, total, page, limit, subpath, maxDepth: 4 });
     } catch (err) {
       log('ERROR', 'Browse listing failed', { folderKey, error: String(err) });
       res.status(500).json({ error: 'Failed to list files' });
@@ -973,10 +1010,10 @@ export function buildApp() {
       return;
     }
 
-    // Check if creating would exceed depth 2
+    // Check if creating would exceed depth 4
     const currentDepth = subpath === '' ? 0 : subpath.split('/').length;
-    if (currentDepth >= 2) {
-      res.status(400).json({ error: 'Max depth of 2 exceeded' });
+    if (currentDepth >= 4) {
+      res.status(400).json({ error: 'Max depth of 4 exceeded' });
       return;
     }
 
