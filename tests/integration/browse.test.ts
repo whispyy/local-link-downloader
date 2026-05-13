@@ -32,12 +32,12 @@
  *   B26 Root listing includes dirs array
  *   B27 subpath=sub1 lists files inside sub1
  *   B28 subpath=sub1/sub2 works at depth 2
- *   B29 subpath=a/b/c returns 400 (exceeds depth)
+ *   B29 subpath=a/b/c/d/e returns 400 (exceeds depth)
  *   B30 subpath=../evil returns 400 (traversal)
  *   B31 Non-existent subpath returns empty
  *   B32 mkdir at root level
  *   B33 mkdir inside subfolder (depth 2)
- *   B34 mkdir rejected at depth 2 (would be depth 3)
+ *   B34 mkdir rejected at depth 4 (would be depth 5)
  *   B35 mkdir rejects names with .. or /
  *   B36 mkdir returns 409 if exists
  *   B37 mkdir requires auth
@@ -596,7 +596,7 @@ describe('GET /api/browse — subfolder navigation', () => {
     const dirNames = res.body.dirs.map((d: { name: string }) => d.name);
     expect(dirNames).toContain('sub1');
     expect(res.body.subpath).toBe('');
-    expect(res.body.maxDepth).toBe(2);
+    expect(res.body.maxDepth).toBe(4);
   });
 
   it('B27 — subpath=sub1 lists files inside sub1', async () => {
@@ -617,12 +617,12 @@ describe('GET /api/browse — subfolder navigation', () => {
     expect(res.status).toBe(200);
     const names = res.body.files.map((f: { name: string }) => f.name);
     expect(names).toContain('deep.txt');
-    // At depth 2, dirs should be empty (can't navigate deeper)
+    // No subdirs exist at this level in the test setup
     expect(res.body.dirs).toEqual([]);
   });
 
-  it('B29 — subpath=a/b/c returns 400 (exceeds depth)', async () => {
-    const res = await request(app).get('/api/browse/media?subpath=a/b/c');
+  it('B29 — subpath=a/b/c/d/e returns 400 (exceeds depth)', async () => {
+    const res = await request(app).get('/api/browse/media?subpath=a/b/c/d/e');
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/depth/i);
@@ -721,12 +721,14 @@ describe('POST /api/browse/:folderKey/mkdir', () => {
     expect(existsSync(path.join(tmpDir, 'level1', 'nested'))).toBe(true);
   });
 
-  it('B34 — mkdir rejected at depth 2 (would be depth 3)', async () => {
-    mkdirSync(path.join(tmpDir, 'level1', 'level2'));
+  it('B34 — mkdir rejected at depth 4 (would be depth 5)', async () => {
+    mkdirSync(path.join(tmpDir, 'level1', 'level2'), { recursive: true });
+    mkdirSync(path.join(tmpDir, 'level1', 'level2', 'level3'), { recursive: true });
+    mkdirSync(path.join(tmpDir, 'level1', 'level2', 'level3', 'level4'), { recursive: true });
 
     const res = await request(app)
       .post('/api/browse/media/mkdir')
-      .send({ name: 'tooDeep', subpath: 'level1/level2' });
+      .send({ name: 'tooDeep', subpath: 'level1/level2/level3/level4' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/depth/i);
@@ -865,7 +867,7 @@ describe('POST /api/browse/:folderKey/:filename/move-to-subpath', () => {
 
     const res2 = await request(app)
       .post('/api/browse/media/root-file.txt/move-to-subpath')
-      .send({ sourceSubpath: '', targetSubpath: 'a/b/c' });
+      .send({ sourceSubpath: '', targetSubpath: 'a/b/c/d/e' });
     expect(res2.status).toBe(400);
   });
 });
