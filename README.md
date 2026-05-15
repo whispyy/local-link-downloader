@@ -20,7 +20,7 @@ A self-hosted web UI for downloading files from URLs, uploading local files, pul
 | Feature | Details |
 |---------|---------|
 | **Download from URL** | Paste any HTTP/HTTPS URL; the server fetches the file server-side |
-| **Upload from local file** | Drag-and-drop or browse to upload a file directly from your browser |
+| **Upload from local file** | Drag-and-drop or browse to upload a file directly from your browser; optionally generate a thumbnail for image files |
 | **Torrent download** | Paste a magnet link or drop a `.torrent` file; downloads via BitTorrent with live peer count and speed |
 | **YouTube download** | Paste a YouTube video URL; downloads video (MP4) or audio (MP3) via yt-dlp with live progress bar and title resolution |
 | **Playlist sync** | Add YouTube playlists that sync automatically on a schedule. Per-video status tracking (done/failed/cancelled/downloading) with manual retry for failed items |
@@ -30,7 +30,7 @@ A self-hosted web UI for downloading files from URLs, uploading local files, pul
 | **Multiple destination folders** | Configure any number of named folders via `DOWNLOAD_FOLDERS` |
 | **Extension allow-list** | Optionally restrict which file extensions are accepted (HTTP/upload only — does not apply to torrents or yt-dlp) |
 | **Optional password auth** | Set `APP_PASSWORD` to require a password; sessions last 8 hours |
-| **Browse files** | `#/browse` page lists files in each folder with size, date, media preview (video/audio/image/text), direct download, and delete |
+| **Browse files** | `#/browse` page lists files in each folder with size, date, media preview (video/audio/image/text), direct download, delete, and inline thumbnail preview for images uploaded with thumbnail generation enabled |
 | **Queue job list** | `#/queue` page shows all jobs (queued, downloading, done, error, cancelled) with live auto-refresh |
 | **Discord notifications** | Optional webhook — get notified on download/upload/torrent/yt-dlp start and completion |
 | **PWA update prompt** | When a new version is deployed, an "Update available" button appears |
@@ -213,7 +213,7 @@ Edit `docker-compose.yml` and adjust:
 | `POST` | `/api/auth` | Exchange password for a session token (`{ password }`) |
 | `GET` | `/api/config` | Returns configured folder keys and allowed extensions |
 | `POST` | `/api/download` | Start a URL download job (`{ url, folderKey, filenameOverride? }`) |
-| `POST` | `/api/upload` | Upload a file directly from the browser (`multipart/form-data`: `file`, `folderKey`, `filenameOverride?`) |
+| `POST` | `/api/upload` | Upload a file directly from the browser (`multipart/form-data`: `file`, `folderKey`, `filenameOverride?`, `thumbnail?`). Pass `thumbnail=on` to generate a 320×320 JPEG thumbnail for raster images (JPEG, PNG, GIF, WebP, BMP). Response includes `has_thumbnail: true` when generated. |
 | `POST` | `/api/torrent` | Start a torrent — JSON `{ magnet, folderKey }` for magnet links, or `multipart/form-data` with a `torrent` file and `folderKey` |
 | `GET` | `/api/jobs` | List all jobs, sorted newest first |
 | `GET` | `/api/status/:jobId` | Get status of a specific job (includes `downloaded_bytes`, `total_bytes`, `peers`, `download_speed` for torrents) |
@@ -240,6 +240,7 @@ All endpoints except `POST /api/auth` require a `Authorization: Bearer <token>` 
 - **Logs** are written to `LOG_DIR/downloads.log`. Mount `./logs:/app/logs` in Docker to keep them on the host.
 - **Cancellation** aborts the in-flight HTTP fetch and deletes any partial file on disk. For yt-dlp jobs, partial and temp files are cleaned up. For torrent jobs, the torrent is stopped but partially-downloaded files are kept.
 - **Upload size limit** is enforced server-side by `MAX_UPLOAD_SIZE` (default `10gb`). Multer rejects oversized uploads before they are written to disk.
+- **Thumbnails** are generated on upload when the "Generate thumbnail" checkbox is checked and the file is a raster image (JPEG, PNG, GIF, WebP, BMP). They are saved to a `.thumbnails/` subfolder inside the destination directory (same filename, JPEG format, max 320×320 px). The `.thumbnails/` folder is hidden from the browse UI. Thumbnail generation failure is non-fatal — the upload still succeeds.
 - **Torrents** are downloaded to a subfolder named after the torrent inside the chosen destination folder. Multi-file torrents are fully supported. The extension allow-list (`ALLOWED_EXTENSIONS`) does not apply to torrent jobs.
 - **Torrent client** is initialised lazily on the first torrent request and shared across all jobs. It binds to a random UDP port for BitTorrent traffic — make sure your firewall/router allows outbound UDP if you are behind NAT.
 - **yt-dlp** is bundled in the Docker image. Video downloads use `bv[ext=mp4]+ba[ext=m4a]` format selection with MP4 merge; audio downloads extract to MP3. Video titles are resolved before download and displayed in the queue.
