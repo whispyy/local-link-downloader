@@ -50,6 +50,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [uploadFilenameOverride, setUploadFilenameOverride] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [generateThumbnail, setGenerateThumbnail] = useState(false);
+  const [uploadThumbnailUrl, setUploadThumbnailUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Torrent mode state
@@ -155,6 +157,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     formData.append('file', selectedFile);
     formData.append('folderKey', folderKey);
     if (uploadFilenameOverride) formData.append('filenameOverride', uploadFilenameOverride);
+    if (generateThumbnail) formData.append('thumbnail', 'on');
 
     const uploadingJob: DownloadJob = {
       id: 'upload',
@@ -187,6 +190,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
         const data = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) {
           setCurrentJob((prev) => prev ? { ...prev, ...data, status: 'done', downloaded_bytes: prev.total_bytes } : prev);
+          if (data.has_thumbnail && data.filename && data.folder_key) {
+            const thumbUrl = `/api/browse/${encodeURIComponent(data.folder_key)}/${encodeURIComponent(data.filename)}?subpath=.thumbnails&token=${encodeURIComponent(token)}`;
+            setUploadThumbnailUrl(thumbUrl);
+          }
           sendJobNotification(uploadName, 'done', undefined, 'upload');
         } else {
           const msg = data.error || 'Upload failed';
@@ -363,6 +370,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
     setSelectedFile(null);
     setUploadFilenameOverride('');
     setUploadError(null);
+    setGenerateThumbnail(false);
+    setUploadThumbnailUrl(null);
     setMagnetUrl('');
     setTorrentFile(null);
     setYtdlpUrl('');
@@ -542,6 +551,16 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                   className="w-full px-4 py-2.5 border border-th-border rounded-lg focus:ring-2 focus:ring-th-ring focus:border-transparent outline-none transition bg-th-bg text-th-text"
                 />
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={generateThumbnail}
+                  onChange={(e) => setGenerateThumbnail(e.target.checked)}
+                  className="w-4 h-4 rounded border-th-border accent-th-btn"
+                />
+                <span className="text-sm text-th-text-sub">Generate thumbnail <span className="text-th-text-faint font-normal">(images only)</span></span>
+              </label>
 
               <AllowedExtensionsHint extensions={config.allowedExtensions} />
 
@@ -760,6 +779,16 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
               )}
               {currentJob.status === 'done' && currentJob.total_bytes != null && (
                 <p className="text-xs text-th-text-dim ml-8 mt-1">{formatBytes(currentJob.total_bytes)}</p>
+              )}
+              {currentJob.status === 'done' && mode === 'upload' && uploadThumbnailUrl && (
+                <div className="ml-8 mt-2">
+                  <img
+                    src={uploadThumbnailUrl}
+                    alt="Thumbnail preview"
+                    className="rounded border border-th-border-light"
+                    style={{ maxWidth: 160, maxHeight: 160, objectFit: 'cover' }}
+                  />
+                </div>
               )}
               {currentJob.message && (
                 currentJob.status === 'error' ? (

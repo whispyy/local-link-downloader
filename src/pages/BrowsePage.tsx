@@ -20,6 +20,7 @@ interface BrowseFile {
   name: string;
   size: number;
   modifiedAt: string;
+  has_thumbnail?: boolean;
 }
 
 interface BrowsePageProps {
@@ -297,6 +298,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const fileUrl = useCallback((filename: string) =>
     `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}${subpathParam}`,
     [folderKey, token, subpathParam]);
+
+  const thumbSubpath = subpath ? `${subpath}/.thumbnails` : '.thumbnails';
+  const thumbUrl = useCallback((filename: string) =>
+    `/api/browse/${encodeURIComponent(folderKey)}/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}&subpath=${encodeURIComponent(thumbSubpath)}`,
+    [folderKey, token, thumbSubpath]);
 
   const videoSrc = useCallback((filename: string) =>
     transcoding
@@ -1196,7 +1202,18 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                         <td className="px-4 py-4 sm:py-3 max-w-0 min-w-[150px]">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="shrink-0 relative">
-                              <MediaIcon filename={displayName} />
+                              {file.has_thumbnail && !isOfflineFolder ? (
+                                <img
+                                  src={thumbUrl(file.name)}
+                                  alt=""
+                                  width={40}
+                                  height={40}
+                                  className="rounded object-cover"
+                                  style={{ width: 40, height: 40 }}
+                                />
+                              ) : (
+                                <MediaIcon filename={displayName} />
+                              )}
                               {fileIsOffline && !isOfflineFolder && (
                                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500" title="Saved offline" />
                               )}

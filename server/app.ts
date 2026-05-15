@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { constants as fsConstants, createWriteStream, existsSync, mkdirSync, readFileSync } from 'fs';
 import { writeFile, readFile, appendFile, unlink, readdir, stat, statfs, rename, copyFile, mkdir, rm } from 'fs/promises';
+import sharp from 'sharp';
 import path from 'path';
 import { handleStreamRequest, serveFileWithRanges, startCacheCleanup, getTranscodeStatus } from './transcode';
 import { buildUsageTracker } from './usage';
@@ -154,6 +155,10 @@ export function validateExtension(filename: string, allowedExtensions: string[])
 
 export function isUnsafeFilename(filename: string): boolean {
   return !filename || filename.includes('..') || filename.includes('/') || filename.includes('\\');
+}
+
+function isRasterImage(mimetype: string): boolean {
+  return ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'].includes(mimetype);
 }
 
 /** Validates a subpath query param. Returns error message or null if valid. */
@@ -630,9 +635,10 @@ export function buildApp() {
     req.socket.setTimeout(0);
     next();
   }, authMiddleware, upload.single('file'), async (req, res) => {
-    const { folderKey, filenameOverride } = req.body as {
+    const { folderKey, filenameOverride, thumbnail } = req.body as {
       folderKey?: string;
       filenameOverride?: string;
+      thumbnail?: string;
     };
 
     if (!req.file) {
@@ -693,6 +699,22 @@ export function buildApp() {
       return;
     }
 
+    let hasThumbnail = false;
+    if (thumbnail === 'on' && isRasterImage(req.file.mimetype)) {
+      const thumbDir = path.join(targetDir, '.thumbnails');
+      if (!existsSync(thumbDir)) mkdirSync(thumbDir, { recursive: true });
+      const thumbPath = path.join(thumbDir, filename);
+      try {
+        await sharp(req.file.buffer)
+          .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toFile(thumbPath);
+        hasThumbnail = true;
+      } catch (err) {
+        log('WARN', 'Thumbnail generation failed', { filename, error: String(err) });
+      }
+    }
+
     const jobId = randomUUID();
     const now = new Date().toISOString();
     const job: DownloadJob = {
@@ -717,6 +739,7 @@ export function buildApp() {
       filename,
       folder_key: folderKey,
       message: job.message,
+      ...(hasThumbnail ? { has_thumbnail: true } : {}),
     });
   });
 
@@ -930,6 +953,9 @@ export function buildApp() {
       const fileEntries = entries.filter(e => e.isFile());
 
       // Gather stats for all files
+      const thumbDir = path.join(targetDir, '.thumbnails');
+      const thumbDirExists = existsSync(thumbDir);
+
       const fileInfos = await Promise.all(
         fileEntries.map(async (entry) => {
           const filePath = path.join(targetDir, entry.name);
@@ -938,6 +964,7 @@ export function buildApp() {
             name: entry.name,
             size: fileStat.size,
             modifiedAt: fileStat.mtime.toISOString(),
+            has_thumbnail: thumbDirExists && existsSync(path.join(thumbDir, entry.name)),
           };
         })
       );
@@ -962,7 +989,7 @@ export function buildApp() {
       let dirs: { name: string }[] = [];
       if (currentDepth < 4) {
         dirs = entries
-          .filter(e => e.isDirectory())
+          .filter(e => e.isDirectory() && e.name !== '.thumbnails')
           .map(e => ({ name: e.name }))
           .sort((a, b) => a.name.localeCompare(b.name));
       }
