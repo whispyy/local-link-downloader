@@ -947,10 +947,11 @@ export function buildApp() {
 
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const showHidden = req.query.hidden === 'true';
 
     try {
       const entries = await readdir(targetDir, { withFileTypes: true });
-      const fileEntries = entries.filter(e => e.isFile());
+      const fileEntries = entries.filter(e => e.isFile() && (showHidden || !e.name.startsWith('.')));
 
       // Gather stats for all files
       const thumbDir = path.join(targetDir, '.thumbnails');
@@ -989,7 +990,7 @@ export function buildApp() {
       let dirs: { name: string }[] = [];
       if (currentDepth < 4) {
         dirs = entries
-          .filter(e => e.isDirectory() && e.name !== '.thumbnails')
+          .filter(e => e.isDirectory() && (showHidden || !e.name.startsWith('.')))
           .map(e => ({ name: e.name }))
           .sort((a, b) => a.name.localeCompare(b.name));
       }

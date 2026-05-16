@@ -1,0 +1,84 @@
+{
+  "playlists": [
+    {
+      "id": "818793ee-af3a-4e02-9ffb-f3a0204b13c8",
+      "url": "https://www.youtube.com/watch?v=ELKiLPvHwHs&list=PLU29iYNDzZz7zs7nd0SuyKMBiok8L-JZg",
+      "folderKey": "test",
+      "format": "audio",
+      "enabled": true,
+      "syncIntervalHours": 6,
+      "videoStatuses": {
+        "ELKiLPvHwHs": {
+          "status": "done",
+          "jobId": "54b0a9ad-b09a-49b1-9408-c14825554fa6",
+          "lastAttemptAt": "2026-04-18T18:29:39.971Z",
+          "title": "Best_Trap_Music_Mix_2024_Best_Gangster_Rap_Mix_-_Hip_Hop_Trap_Music_2024_Mafia_Music.mp3"
+        },
+        "sBJT1BpOcvg": {
+          "status": "done",
+          "jobId": "a007ef8d-9fc8-485f-ad24-5f97b60eb54a",
+          "lastAttemptAt": "2026-04-18T18:22:35.698Z",
+          "title": "Music That Make You Feel BADASS 🎧 EDM Remixes of Popular Songs 🎧 EDM Music Mix ​| Bass Boosted"
+        },
+        "3hDQwIyKJ2o": {
+          "status": "done",
+          "jobId": "69c6cfd2-a29c-4b09-abd8-fc095d22dca1",
+          "lastAttemptAt": "2026-04-18T18:22:37.207Z",
+          "title": "DARK TECHNO TRANCE | Andrea Botez [4K]"
+        },
+        "9lXNdAgsBIA": {
+          "status": "done",
+          "jobId": "adb0ee01-bae7-48b4-8f14-80f04339a5b2",
+          "lastAttemptAt": "2026-04-18T18:22:37.203Z",
+          "title": "New Electro & House 2012 Dance Mix #53"
+        },
+        "JA86AFp0gbI": {
+          "status": "done",
+          "jobId": "1c144b34-49d0-4a24-babd-def75ea773d0",
+          "lastAttemptAt": "2026-04-18T18:22:33.221Z",
+          "title": "TECHNO MIX 2025 💣 Remixes Of Popular Songs 💣 Only Techno Bangers"
+        },
+        "Ix5xVIWhlbQ": {
+          "status": "done",
+          "jobId": "8f929caf-4f80-4bbe-a751-bacf4ed2b2d1",
+          "lastAttemptAt": "2026-04-18T18:22:38.244Z",
+          "title": "Dubai’s Hottest Party Vibes / Tori levett @Boatriders @technoandchill"
+        },
+        "-ftqz2Irvn4": {
+          "status": "done",
+          "jobId": "83b66bae-3e5e-4870-82df-406a470b2cdd",
+          "lastAttemptAt": "2026-04-18T18:22:32.397Z",
+          "title": "Italian Chill Funk & Coastal Grooves - Tropico Adriatico (Lato A)"
+        },
+        "stLE4yy5qxs": {
+          "status": "done",
+          "jobId": "4dd3bb97-9ef9-4459-ba5d-57cbbcf5da60",
+          "lastAttemptAt": "2026-04-18T18:22:38.190Z",
+          "title": "Joe Dassin - Dans les yeux d'Émilie (1977)"
+        },
+        "g9Rh8Sfqp8E": {
+          "status": "done",
+          "jobId": "b9aae043-5f19-4d46-bb0d-f9fe63a67358",
+          "lastAttemptAt": "2026-04-18T18:22:32.782Z",
+          "title": "Italian Funk | Mediterranean Nu Disco & Coastal Grooves – Tropico Adriatico: La Fuga"
+        },
+        "4F_RCWVoL4s": {
+          "status": "done",
+          "jobId": "1f7efbd1-470a-41a2-afad-a4b8fb4cbe4d",
+          "lastAttemptAt": "2026-04-18T18:22:37.914Z",
+          "title": "Neil Diamond - Sweet Caroline (Audio)"
+        },
+        "N-aK6JnyFmk": {
+          "status": "done",
+          "jobId": "d60f5f96-fa89-4147-b36f-5a7c380d0c2b",
+          "lastAttemptAt": "2026-04-18T18:22:37.872Z",
+          "title": "The Mamas & The Papas - California Dreamin'"
+        }
+      },
+      "lastSyncAt": "2026-05-15T02:47:45.044Z",
+      "lastSyncError": null,
+      "createdAt": "2026-04-18T18:21:26.709Z",
+      "title": "music - auto"
+    }
+  ]
+}
