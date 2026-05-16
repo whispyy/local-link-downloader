@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthHeaders } from '../hooks/useAuthHeaders';
-import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil, WifiOff, CloudDownload, Loader2, ArrowUpDown } from 'lucide-react';
+import { Folder, Film, Music, Image, FileText, FileCode, Download, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trash2, RefreshCw, ArrowRightLeft, FolderPlus, MoreVertical, Pencil, WifiOff, CloudDownload, Loader2, ArrowUpDown, Eye } from 'lucide-react';
 import PageTitle from '../components/PageTitle';
 import { formatBytes, formatDate, getMediaType } from '../utils';
 import NavBar from '../components/NavBar';
@@ -204,6 +204,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const [confirmDeleteDir, setConfirmDeleteDir] = useState<string | null>(null);
   const [deletingDir, setDeletingDir] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [isOfflineFolder, setIsOfflineFolder] = useState(false);
   const offline = useOfflineStore();
   const [offlinePreviewUrl, setOfflinePreviewUrl] = useState<string | null>(null);
@@ -261,7 +262,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}&sort=${sortField}&order=${sortOrder}`, {
+      const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}&sort=${sortField}&order=${sortOrder}${showHidden ? '&hidden=true' : ''}`, {
         headers: authHeaders,
       });
       if (res.status === 401) { onUnauthorized(); return; }
@@ -275,7 +276,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     } finally {
       setLoading(false);
     }
-  }, [folderKey, page, limit, subpath, sortField, sortOrder, authHeaders, onUnauthorized]);
+  }, [folderKey, page, limit, subpath, sortField, sortOrder, showHidden, authHeaders, onUnauthorized]);
 
   useEffect(() => {
     fetchFiles();
@@ -809,9 +810,24 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 </button>
               </label>
             )}
+            {!isOfflineFolder && (
+              <label className="flex items-center gap-2 text-sm text-th-text-sub cursor-pointer select-none">
+                <Eye className="w-4 h-4" />
+                <span>Hidden</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showHidden}
+                  onClick={() => setShowHidden(v => !v)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showHidden ? 'bg-purple-500' : 'bg-th-border'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${showHidden ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                </button>
+              </label>
+            )}
           </div>
           {/* Mobile "more" menu */}
-          {!isOfflineFolder && ((currentDepth < 2 && folderKey) || transcodingAvailable) && (
+          {!isOfflineFolder && (
             <div className="relative sm:hidden" ref={moreMenuRef}>
               <button
                 onClick={() => setMoreMenuOpen(o => !o)}
@@ -845,6 +861,19 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                       </button>
                     </label>
                   )}
+                  <label className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-th-text-sub hover:bg-th-bg-alt transition cursor-pointer">
+                    <Eye className="w-4 h-4" />
+                    <span className="flex-1">Show hidden</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showHidden}
+                      onClick={() => setShowHidden(v => !v)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showHidden ? 'bg-purple-500' : 'bg-th-border'}`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${showHidden ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                    </button>
+                  </label>
                 </div>
               )}
             </div>
@@ -1101,7 +1130,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 {displayDirs.map((dirName) => (
                   <tr
                     key={`dir-${dirName}`}
-                    className="hover:bg-th-bg-alt transition cursor-pointer"
+                    className={`hover:bg-th-bg-alt transition cursor-pointer ${dirName.startsWith('.') ? 'opacity-50' : ''}`}
                     onClick={() => { if (!renamingDir && !confirmDeleteDir) handleNavigateInto(dirName); }}
                     {...drag.dirRow(dirName)}
                   >
@@ -1195,7 +1224,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                   return (
                     <Fragment key={file.name}>
                       <tr
-                        className={`hover:bg-th-bg-alt transition cursor-pointer ${isSelected ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''}`}
+                        className={`hover:bg-th-bg-alt transition cursor-pointer ${isSelected ? 'bg-th-bg-muted' : ''} ${moving && moveTarget === file.name ? 'opacity-60' : ''} ${file.name.startsWith('.') ? 'opacity-50' : ''}`}
                         onClick={(e) => { if (!renamingFile) handleFileClick(file.name, fileIndex, e); }}
                         {...(isOfflineFolder ? {} : drag.fileRow(file.name))}
                       >
