@@ -89,6 +89,11 @@ body {
   }
 }
 
+/* Bottom padding when the media player pill is active */
+.pb-player {
+  padding-bottom: 7rem;
+}
+
 /* Hide scrollbar for horizontal scroll containers */
 .scrollbar-none {
   -ms-overflow-style: none;
