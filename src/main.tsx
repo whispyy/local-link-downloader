@@ -9,6 +9,8 @@ import UsagePage from './pages/UsagePage.tsx';
 import AutoCleanPage from './pages/AutoCleanPage.tsx';
 import PlaylistsPage from './pages/PlaylistsPage.tsx';
 import VersionBadge from './components/VersionBadge.tsx';
+import { MediaPlayerProvider } from './hooks/useMediaPlayer.tsx';
+import MediaPlayer from './components/player/MediaPlayer.tsx';
 import './index.css';
 
 const SESSION_KEY = 'wd_token';
@@ -103,7 +105,10 @@ function Root() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <Root />
+      <MediaPlayerProvider>
+        <Root />
+        <MediaPlayer />
+      </MediaPlayerProvider>
     </ErrorBoundary>
   </StrictMode>
 );
