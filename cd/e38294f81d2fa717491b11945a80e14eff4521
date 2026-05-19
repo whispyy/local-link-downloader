@@ -1,0 +1,38 @@
+src/components/player/QueuePanel.tsx
+  s_880920c4121e74::t_6a92af5d418c11 1-65
+src/index.css
+  s_880920c4121e74::t_a537a5a7e16b31 92-96
+src/main.tsx
+  s_880920c4121e74::t_5511a4aae92d90 108-111
+  s_880920c4121e74::t_b1d9d5886ad0dd 12-13
+src/hooks/useMediaPlayer.tsx
+  s_880920c4121e74::t_f59487499f7cf4 1-188
+src/pages/BrowsePage.tsx
+  s_880920c4121e74::t_4ecf5d400cf04d 1413-1432
+  s_880920c4121e74::t_c4e519ee22e073 1319-1341
+  s_880920c4121e74::t_6ed9b744651b82 1344-1349
+  s_880920c4121e74::t_a6b41e7d4fb26b 3
+  s_880920c4121e74::t_e0b2c517b14370 1435-1444
+  s_880920c4121e74::t_63eea519f0b9a8 4
+  s_880920c4121e74::t_1e383136113993 314-325
+  s_880920c4121e74::t_4fbabb2e116036 326-336
+src/components/player/MediaPlayer.tsx
+  s_880920c4121e74::t_d2602ce9ac7897 248
+  s_880920c4121e74::t_32f7b0bddd6c45 1-247,249-421
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.9",
+  "base_commit_sha": "cde38294f81d2fa717491b11945a80e14eff4521",
+  "prompts": {},
+  "sessions": {
+    "s_880920c4121e74": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "996bb379-6beb-4aa4-bdc7-e64b53990ff8",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": null
+    }
+  }
+}
