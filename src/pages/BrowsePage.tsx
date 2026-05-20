@@ -241,7 +241,11 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
         if (!data) return;
         setFolders(data.folders);
         if (data.freeSpace) setFreeSpace(data.freeSpace);
-        if (data.folders.length > 0) setFolderKey(data.folders[0]);
+        if (data.folders.length > 0) {
+          const saved = localStorage.getItem('lastFolderKey');
+          const initial = saved && data.folders.includes(saved) ? saved : data.folders[0];
+          setFolderKey(initial);
+        }
         const tc = data.transcoding ?? false;
         setTranscodingAvailable(tc);
         setTranscoding(tc);
@@ -353,6 +357,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
     }
     setIsOfflineFolder(false);
     setFolderKey(key);
+    localStorage.setItem('lastFolderKey', key);
     setSubpath('');
     setPage(1);
     resetSelection();
