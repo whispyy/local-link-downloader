@@ -202,60 +202,67 @@ export default function MediaPlayer() {
         onPause={() => setPlaying(false)}
       />
 
-      {/* Floating video card */}
-      {isVideo && isVideoVisible && (
-        <div className="fixed bottom-[6.5rem] right-8 w-72 sm:w-80 rounded-xl overflow-hidden shadow-xl border border-[var(--color-border)] bg-[var(--color-bg-media)] z-[999]">
-          <video
-            ref={videoRef}
-            className="w-full aspect-video object-contain bg-black"
-            playsInline
-            preload="metadata"
-            onTimeUpdate={(e) => handleMediaTimeUpdate(e.currentTarget)}
-            onDurationChange={(e) => handleMediaDurationChange(e.currentTarget)}
-            onEnded={_trackEnded}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-          />
-          <div className="absolute top-2 right-2 flex gap-1">
+      {/* Floating video card + show button — kept in DOM while isVideo so videoRef stays valid */}
+      {isVideo && (
+        <>
+          <div
+            className={`fixed bottom-[6.5rem] right-8 w-72 sm:w-80 rounded-xl overflow-hidden shadow-xl border border-[var(--color-border)] bg-[var(--color-bg-media)] z-[999] transition duration-200 ease-out ${
+              isVideoVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
+            }`}
+          >
+            <video
+              ref={videoRef}
+              className="w-full aspect-video object-contain bg-black"
+              playsInline
+              preload="metadata"
+              onTimeUpdate={(e) => handleMediaTimeUpdate(e.currentTarget)}
+              onDurationChange={(e) => handleMediaDurationChange(e.currentTarget)}
+              onEnded={_trackEnded}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+            />
+            <div className="absolute top-2 right-2 flex gap-1">
+              <button
+                onClick={handleFullscreen}
+                className="p-1 rounded bg-black/50 text-white hover:bg-black/70 transition"
+                title="Fullscreen"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setIsVideoVisible(false)}
+                className="p-1 rounded bg-black/50 text-white hover:bg-black/70 transition"
+                title="Hide video"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={`fixed bottom-[6.5rem] right-8 z-[999] transition duration-200 ease-out ${
+              !isVideoVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
+            }`}
+          >
             <button
-              onClick={handleFullscreen}
-              className="p-1 rounded bg-black/50 text-white hover:bg-black/70 transition"
-              title="Fullscreen"
+              onClick={() => setIsVideoVisible(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-bg-surface)] border border-[var(--color-border)] text-[var(--color-text-sub)] shadow hover:bg-[var(--color-bg-muted)] transition"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setIsVideoVisible(false)}
-              className="p-1 rounded bg-black/50 text-white hover:bg-black/70 transition"
-              title="Hide video"
-            >
-              <X className="w-3.5 h-3.5" />
+              <Film className="w-3.5 h-3.5" />Show video
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Show video button when card is hidden */}
-      {isVideo && !isVideoVisible && (
-        <div className="fixed bottom-[6.5rem] right-8 z-[999]">
-          <button
-            onClick={() => setIsVideoVisible(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-bg-surface)] border border-[var(--color-border)] text-[var(--color-text-sub)] shadow hover:bg-[var(--color-bg-muted)] transition"
-          >
-            <Film className="w-3.5 h-3.5" />Show video
-          </button>
-        </div>
+        </>
       )}
 
       {/* Queue panel */}
       {isQueueOpen && (
-        <div className="fixed bottom-[7rem] left-8 right-8 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-xl z-[998] overflow-hidden">
+        <div className="fixed bottom-[7rem] left-8 right-8 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] shadow-xl z-[998] overflow-hidden animate-slide-up">
           <QueuePanel />
         </div>
       )}
 
       {/* Pill bar */}
-      <div className="fixed bottom-8 left-8 right-8 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-full z-[1000] px-4 py-3 flex items-center gap-3 shadow-lg">
+      <div className="fixed bottom-8 left-8 right-8 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-full z-[1000] px-4 py-3 flex items-center gap-3 shadow-lg animate-slide-up">
 
         {/* Skip prev */}
         <button
@@ -288,7 +295,7 @@ export default function MediaPlayer() {
 
         {/* Track info */}
         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-          <p className="text-sm font-medium text-[var(--color-text)] truncate leading-tight" title={currentItem.name}>
+          <p key={currentItem.id} className="text-sm font-medium text-[var(--color-text)] truncate leading-tight animate-fade-in" title={currentItem.name}>
             {currentItem.name}
           </p>
           <p className="text-xs text-[var(--color-text-faint)]">{displayTime} / {totalTime}</p>
@@ -340,7 +347,7 @@ export default function MediaPlayer() {
             <Settings className="w-4 h-4" />
           </button>
           {isSpeedOpen && (
-            <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-xl shadow-lg overflow-hidden z-[1001]">
+            <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-xl shadow-lg overflow-hidden z-[1001] animate-scale-fade-in" style={{ transformOrigin: 'bottom right' }}>
               {SPEEDS.map(rate => (
                 <button
                   key={rate}
@@ -363,7 +370,7 @@ export default function MediaPlayer() {
             <Settings className="w-4 h-4" />
           </button>
           {isMobileSettingsOpen && (
-            <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-xl shadow-lg p-4 z-[1001] w-52">
+            <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-bg-surface)] border border-[var(--color-border)] rounded-xl shadow-lg p-4 z-[1001] w-52 animate-scale-fade-in" style={{ transformOrigin: 'bottom right' }}>
               <div className="mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-faint)] mb-2">Volume</p>
                 <div className="flex items-center gap-2">

@@ -121,7 +121,7 @@ function MobileSortMenu({ sortField, sortOrder, onSort }: MobileSortMenuProps) {
         </span>
       )}
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 min-w-[7rem]">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-th-bg border border-th-border-light rounded-lg shadow-lg py-1 min-w-[7rem] animate-scale-fade-in" style={{ transformOrigin: 'top left' }}>
           {(['name', 'size', 'modified'] as const).map((f) => {
             const label = f === 'name' ? 'Name' : f === 'size' ? 'Size' : 'Date';
             const isActive = sortField === f;
@@ -849,7 +849,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                 <MoreVertical className="w-4 h-4" />
               </button>
               {moreMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-56 bg-th-bg border border-th-border rounded-lg shadow-lg z-20 py-1">
+                <div className="absolute right-0 top-full mt-1 w-56 bg-th-bg border border-th-border rounded-lg shadow-lg z-20 py-1 animate-scale-fade-in" style={{ transformOrigin: 'top right' }}>
                   {currentDepth < 2 && folderKey && (
                     <button
                       onClick={() => { setMoreMenuOpen(false); setCreatingFolder(true); }}
@@ -998,7 +998,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
         {/* Media viewer */}
         {previewFile && (
-          <div className="mb-4 bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
+          <div className="mb-4 bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden animate-fade-in">
             <div className="flex items-start justify-between px-4 py-2 bg-th-bg-alt border-b border-th-border-light">
               <span className="text-sm font-medium text-th-text-sub break-all">{previewFile}</span>
               <button onClick={closePreview} className="text-th-text-faint hover:text-th-text-sub transition ml-2 mt-0.5 shrink-0">
@@ -1070,7 +1070,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
             ) : 'No files in this folder.'}
           </div>
         ) : (
-          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden">
+          <div className="bg-th-bg rounded-lg shadow-sm border border-th-border-light overflow-hidden animate-fade-in">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-th-border-lighter bg-th-bg-alt text-left text-xs font-medium text-th-text-dim uppercase tracking-wide">
