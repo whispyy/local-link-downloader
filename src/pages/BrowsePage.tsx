@@ -261,13 +261,14 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       });
   }, [token, authHeaders, onUnauthorized]);
 
-  const fetchFiles = useCallback(async () => {
+  const fetchFiles = useCallback(async (signal?: AbortSignal) => {
     if (!folderKey) return;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}?page=${page}&limit=${limit}&subpath=${encodeURIComponent(subpath)}&sort=${sortField}&order=${sortOrder}`, {
         headers: authHeaders,
+        signal,
       });
       if (res.status === 401) { onUnauthorized(); return; }
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
@@ -276,6 +277,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       setTotal(data.total);
       setDirs((data.dirs || []).map((d: { name: string }) => d.name));
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to load files');
     } finally {
       setLoading(false);
@@ -283,7 +285,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   }, [folderKey, page, limit, subpath, sortField, sortOrder, authHeaders, onUnauthorized]);
 
   useEffect(() => {
-    fetchFiles();
+    const controller = new AbortController();
+    fetchFiles(controller.signal);
+    return () => controller.abort();
   }, [fetchFiles]);
 
   const handleSort = useCallback((field: 'name' | 'size' | 'modified') => {
@@ -317,8 +321,9 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
 
   const { playNow, addToQueue } = useMediaPlayer();
 
-  const makeQueueItem = useCallback((file: BrowseFile): QueueItem => {
-    const mediaType = getMediaType(file.name) as 'audio' | 'video';
+  const makeQueueItem = useCallback((file: BrowseFile): QueueItem | null => {
+    const mediaType = getMediaType(file.name);
+    if (mediaType !== 'audio' && mediaType !== 'video') return null;
     return {
       id: `${folderKey}::${subpath}::${file.name}`,
       name: file.name,
@@ -518,6 +523,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const handleRenameDir = useCallback(async (oldName: string) => {
     const trimmed = renameDirValue.trim();
     if (!trimmed || trimmed === oldName) { setRenamingDir(null); return; }
+    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) { setRenamingDir(null); return; }
     setRenameDirLoading(true);
     try {
       const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rename-dir`, {
@@ -544,6 +550,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
   const handleRenameFile = useCallback(async (oldName: string) => {
     const trimmed = renameFileValue.trim();
     if (!trimmed || trimmed === oldName) { setRenamingFile(null); return; }
+    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) { setRenamingFile(null); return; }
     setRenameFileLoading(true);
     try {
       const res = await fetch(`/api/browse/${encodeURIComponent(folderKey)}/rename-file`, {
@@ -1348,8 +1355,8 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                   <>
                                     {getMediaType(file.name) === 'audio' && (
                                       <>
-                                        <button onClick={() => playNow(makeQueueItem(file))} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Play now"><Play className="w-4 h-4" /></button>
-                                        <button onClick={() => addToQueue(makeQueueItem(file))} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Add to queue"><ListPlus className="w-4 h-4" /></button>
+                                        <button onClick={() => { const item = makeQueueItem(file); if (item) playNow(item); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Play now"><Play className="w-4 h-4" /></button>
+                                        <button onClick={() => { const item = makeQueueItem(file); if (item) addToQueue(item); }} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub hover:bg-th-bg-alt transition" title="Add to queue"><ListPlus className="w-4 h-4" /></button>
                                       </>
                                     )}
                                     <a href={fileUrl(file.name)} download={file.name} className="p-1.5 rounded text-th-text-faint hover:text-th-text-sub transition" title="Download"><Download className="w-4 h-4" /></a>
@@ -1439,10 +1446,10 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
                                   <>
                                     {getMediaType(file.name) === 'audio' && (
                                       <>
-                                        <button onClick={() => playNow(makeQueueItem(file))} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                        <button onClick={() => { const item = makeQueueItem(file); if (item) playNow(item); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
                                           <Play className="w-3.5 h-3.5" />Play
                                         </button>
-                                        <button onClick={() => addToQueue(makeQueueItem(file))} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
+                                        <button onClick={() => { const item = makeQueueItem(file); if (item) addToQueue(item); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-th-text-sub bg-th-bg border border-th-border-light transition">
                                           <ListPlus className="w-3.5 h-3.5" />Add to Queue
                                         </button>
                                       </>
