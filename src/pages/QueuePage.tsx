@@ -210,13 +210,22 @@ export default function QueuePage({ token, onUnauthorized, authEnabled }: QueueP
 
   const pullRefresh = usePullToRefresh(fetchJobs);
 
+  const hasActiveJobs = jobs.some(j => j.status === 'queued' || j.status === 'downloading');
+
   useEffect(() => {
     fetchJobs();
-    const interval = setInterval(fetchJobs, FETCH_JOBS_INTERVAL);
-    return () => clearInterval(interval);
   }, [fetchJobs]);
 
-  const filtered = filter === 'all' ? jobs : jobs.filter((j) => j.status === filter);
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    const interval = setInterval(fetchJobs, FETCH_JOBS_INTERVAL);
+    return () => clearInterval(interval);
+  }, [hasActiveJobs, fetchJobs]);
+
+  const filtered = useMemo(
+    () => filter === 'all' ? jobs : jobs.filter((j) => j.status === filter),
+    [jobs, filter],
+  );
 
   const counts = useMemo(() => {
     const c: Record<JobStatus | 'all', number> = { all: jobs.length, queued: 0, downloading: 0, done: 0, error: 0, cancelled: 0 };

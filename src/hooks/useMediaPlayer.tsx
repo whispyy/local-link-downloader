@@ -11,8 +11,6 @@ interface MediaPlayerState {
   queue: QueueItem[];
   currentIndex: number;
   isPlaying: boolean;
-  currentTime: number;
-  duration: number;
   volume: number;
   playbackRate: number;
   isQueueOpen: boolean;
@@ -27,8 +25,6 @@ type Action =
   | { type: 'SKIP_NEXT' }
   | { type: 'SKIP_PREV' }
   | { type: 'SET_PLAYING'; value: boolean }
-  | { type: 'SET_CURRENT_TIME'; time: number }
-  | { type: 'SET_DURATION'; duration: number }
   | { type: 'SET_VOLUME'; volume: number }
   | { type: 'SET_PLAYBACK_RATE'; rate: number }
   | { type: 'TOGGLE_QUEUE' }
@@ -52,8 +48,6 @@ const initialState: MediaPlayerState = {
   queue: [],
   currentIndex: -1,
   isPlaying: false,
-  currentTime: 0,
-  duration: 0,
   volume: getInitialVolume(),
   playbackRate: getInitialRate(),
   isQueueOpen: false,
@@ -62,13 +56,13 @@ const initialState: MediaPlayerState = {
 function reducer(state: MediaPlayerState, action: Action): MediaPlayerState {
   switch (action.type) {
     case 'PLAY_NOW':
-      return { ...state, queue: [action.item], currentIndex: 0, isPlaying: true, currentTime: 0, duration: 0 };
+      return { ...state, queue: [action.item], currentIndex: 0, isPlaying: true };
     case 'ADD_TO_QUEUE': {
       if (state.queue.some(q => q.id === action.item.id)) return state;
       const queue = [...state.queue, action.item];
       const currentIndex = state.currentIndex === -1 ? 0 : state.currentIndex;
       const isPlaying = state.currentIndex === -1 ? true : state.isPlaying;
-      return { ...state, queue, currentIndex, isPlaying, currentTime: state.currentIndex === -1 ? 0 : state.currentTime, duration: state.currentIndex === -1 ? 0 : state.duration };
+      return { ...state, queue, currentIndex, isPlaying };
     }
     case 'PLAY_NEXT': {
       if (state.queue.some(q => q.id === action.item.id)) return state;
@@ -87,22 +81,18 @@ function reducer(state: MediaPlayerState, action: Action): MediaPlayerState {
       return { ...state, queue, currentIndex };
     }
     case 'JUMP_TO':
-      return { ...state, currentIndex: action.index, isPlaying: true, currentTime: 0, duration: 0 };
+      return { ...state, currentIndex: action.index, isPlaying: true };
     case 'SKIP_NEXT': {
       if (state.currentIndex >= state.queue.length - 1) return { ...state, isPlaying: false };
-      return { ...state, currentIndex: state.currentIndex + 1, isPlaying: true, currentTime: 0, duration: 0 };
+      return { ...state, currentIndex: state.currentIndex + 1, isPlaying: true };
     }
     case 'SKIP_PREV': {
-      if (state.currentTime > 3) return { ...state, currentTime: 0 };
-      if (state.currentIndex <= 0) return { ...state, currentTime: 0 };
-      return { ...state, currentIndex: state.currentIndex - 1, isPlaying: true, currentTime: 0, duration: 0 };
+      // "Restart if > 3s" logic lives in MediaPlayer to keep currentTime out of global state
+      if (state.currentIndex <= 0) return state;
+      return { ...state, currentIndex: state.currentIndex - 1, isPlaying: true };
     }
     case 'SET_PLAYING':
       return { ...state, isPlaying: action.value };
-    case 'SET_CURRENT_TIME':
-      return { ...state, currentTime: action.time };
-    case 'SET_DURATION':
-      return { ...state, duration: action.duration };
     case 'SET_VOLUME':
       return { ...state, volume: action.volume };
     case 'SET_PLAYBACK_RATE':
@@ -113,7 +103,7 @@ function reducer(state: MediaPlayerState, action: Action): MediaPlayerState {
       return { ...state, queue: [], currentIndex: -1, isPlaying: false, isQueueOpen: false };
     case 'TRACK_ENDED': {
       if (state.currentIndex >= state.queue.length - 1) return { ...state, isPlaying: false };
-      return { ...state, currentIndex: state.currentIndex + 1, isPlaying: true, currentTime: 0, duration: 0 };
+      return { ...state, currentIndex: state.currentIndex + 1, isPlaying: true };
     }
     default:
       return state;
@@ -130,14 +120,11 @@ interface MediaPlayerContextValue {
   skipNext: () => void;
   skipPrev: () => void;
   setPlaying: (value: boolean) => void;
-  seek: (time: number) => void;
   setVolume: (volume: number) => void;
   setPlaybackRate: (rate: number) => void;
   toggleQueue: () => void;
   clearQueue: () => void;
   _trackEnded: () => void;
-  _setCurrentTime: (time: number) => void;
-  _setDuration: (duration: number) => void;
 }
 
 const MediaPlayerContext = createContext<MediaPlayerContextValue | null>(null);
@@ -161,20 +148,17 @@ export function MediaPlayerProvider({ children }: { children: ReactNode }) {
   const skipNext = useCallback(() => dispatch({ type: 'SKIP_NEXT' }), []);
   const skipPrev = useCallback(() => dispatch({ type: 'SKIP_PREV' }), []);
   const setPlaying = useCallback((value: boolean) => dispatch({ type: 'SET_PLAYING', value }), []);
-  const seek = useCallback((time: number) => dispatch({ type: 'SET_CURRENT_TIME', time }), []);
   const setVolume = useCallback((volume: number) => dispatch({ type: 'SET_VOLUME', volume }), []);
   const setPlaybackRate = useCallback((rate: number) => dispatch({ type: 'SET_PLAYBACK_RATE', rate }), []);
   const toggleQueue = useCallback(() => dispatch({ type: 'TOGGLE_QUEUE' }), []);
   const clearQueue = useCallback(() => dispatch({ type: 'CLEAR_QUEUE' }), []);
   const _trackEnded = useCallback(() => dispatch({ type: 'TRACK_ENDED' }), []);
-  const _setCurrentTime = useCallback((time: number) => dispatch({ type: 'SET_CURRENT_TIME', time }), []);
-  const _setDuration = useCallback((duration: number) => dispatch({ type: 'SET_DURATION', duration }), []);
 
   return (
     <MediaPlayerContext.Provider value={{
       state, playNow, addToQueue, playNext, removeFromQueue, jumpTo,
-      skipNext, skipPrev, setPlaying, seek, setVolume, setPlaybackRate,
-      toggleQueue, clearQueue, _trackEnded, _setCurrentTime, _setDuration,
+      skipNext, skipPrev, setPlaying, setVolume, setPlaybackRate,
+      toggleQueue, clearQueue, _trackEnded,
     }}>
       {children}
     </MediaPlayerContext.Provider>

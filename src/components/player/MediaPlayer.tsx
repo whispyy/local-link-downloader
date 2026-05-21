@@ -19,17 +19,20 @@ const SPEEDS = [0.5, 1, 1.5, 2];
 export default function MediaPlayer() {
   const {
     state,
-    setPlaying, skipNext, skipPrev, seek,
+    setPlaying, skipNext, skipPrev, _trackEnded,
     setVolume, setPlaybackRate, toggleQueue,
-    _trackEnded, _setCurrentTime, _setDuration,
   } = useMediaPlayer();
 
-  const { queue, currentIndex, isPlaying, currentTime, duration, volume, playbackRate, isQueueOpen } = state;
+  const { queue, currentIndex, isPlaying, volume, playbackRate, isQueueOpen } = state;
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
 
+  // currentTime and duration are local — keeping them out of global context
+  // prevents all useMediaPlayer() consumers from re-rendering on every timeupdate (~4×/sec)
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [isSpeedOpen, setIsSpeedOpen] = useState(false);
   const [isMobileSettingsOpen, setIsMobileSettingsOpen] = useState(false);
   const [isVideoVisible, setIsVideoVisible] = useState(true);
@@ -53,6 +56,8 @@ export default function MediaPlayer() {
     el.src = currentItem.url;
     el.volume = volume;
     el.playbackRate = playbackRate;
+    setCurrentTime(0);
+    setDuration(0);
     el.load();
     if (isPlaying) {
       el.play().catch(() => {});
@@ -83,16 +88,28 @@ export default function MediaPlayer() {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate;
   }, [playbackRate]);
 
-  // Seek when state.currentTime is set externally (e.g. after jump)
-  const lastSeekRef = useRef(-1);
-  useEffect(() => {
-    const el = activeRef.current;
-    if (!el || isDragging) return;
-    if (currentTime === 0 && lastSeekRef.current !== 0) {
-      el.currentTime = 0;
-      lastSeekRef.current = 0;
+  const handleMediaTimeUpdate = useCallback((el: HTMLMediaElement) => {
+    setCurrentTime(el.currentTime);
+    if ('mediaSession' in navigator && el.duration > 0) {
+      navigator.mediaSession.setPositionState({ duration: el.duration, position: el.currentTime, playbackRate });
     }
-  }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [playbackRate]);
+
+  const handleMediaDurationChange = useCallback((el: HTMLMediaElement) => {
+    if (el.duration && isFinite(el.duration)) setDuration(el.duration);
+  }, []);
+
+  // Restart track if > 3s in, otherwise go to previous — handled here
+  // because currentTime is local state (not in context)
+  const handleSkipPrev = useCallback(() => {
+    if (currentTime > 3 || currentIndex <= 0) {
+      const el = activeRef.current;
+      if (el) el.currentTime = 0;
+      setCurrentTime(0);
+    } else {
+      skipPrev();
+    }
+  }, [currentTime, currentIndex, skipPrev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Media session API
   useEffect(() => {
@@ -101,14 +118,14 @@ export default function MediaPlayer() {
     navigator.mediaSession.setActionHandler('play', () => setPlaying(true));
     navigator.mediaSession.setActionHandler('pause', () => setPlaying(false));
     navigator.mediaSession.setActionHandler('nexttrack', skipNext);
-    navigator.mediaSession.setActionHandler('previoustrack', skipPrev);
+    navigator.mediaSession.setActionHandler('previoustrack', handleSkipPrev);
     return () => {
       navigator.mediaSession.setActionHandler('play', null);
       navigator.mediaSession.setActionHandler('pause', null);
       navigator.mediaSession.setActionHandler('nexttrack', null);
       navigator.mediaSession.setActionHandler('previoustrack', null);
     };
-  }, [currentItem?.id, setPlaying, skipNext, skipPrev]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentItem?.id, setPlaying, skipNext, handleSkipPrev]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Body padding when player is visible
   useEffect(() => {
@@ -125,17 +142,6 @@ export default function MediaPlayer() {
     if (isVideo) setIsVideoVisible(true);
   }, [isVideo]);
 
-  const handleMediaTimeUpdate = useCallback((el: HTMLMediaElement) => {
-    _setCurrentTime(el.currentTime);
-    if ('mediaSession' in navigator && el.duration > 0) {
-      navigator.mediaSession.setPositionState({ duration: el.duration, position: el.currentTime, playbackRate });
-    }
-  }, [_setCurrentTime, playbackRate]);
-
-  const handleMediaDurationChange = useCallback((el: HTMLMediaElement) => {
-    if (el.duration && isFinite(el.duration)) _setDuration(el.duration);
-  }, [_setDuration]);
-
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current) return;
     const rect = progressRef.current.getBoundingClientRect();
@@ -143,9 +149,8 @@ export default function MediaPlayer() {
     const t = pct * duration;
     const el = activeRef.current;
     if (el) el.currentTime = t;
-    seek(t);
-    lastSeekRef.current = t;
-  }, [duration, seek]); // eslint-disable-line react-hooks/exhaustive-deps
+    setCurrentTime(t);
+  }, [duration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleProgressMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current) return;
@@ -163,15 +168,14 @@ export default function MediaPlayer() {
       const t = p * duration;
       const el = activeRef.current;
       if (el) el.currentTime = t;
-      seek(t);
-      lastSeekRef.current = t;
+      setCurrentTime(t);
       setIsDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [duration, seek]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [duration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFullscreen = useCallback(() => {
     const el = videoRef.current;
@@ -255,7 +259,7 @@ export default function MediaPlayer() {
 
         {/* Skip prev */}
         <button
-          onClick={skipPrev}
+          onClick={handleSkipPrev}
           disabled={currentIndex === 0 && currentTime < 1}
           className="hidden sm:flex shrink-0 items-center justify-center w-8 h-8 rounded-full text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-muted)] transition disabled:opacity-30"
           title="Previous"
@@ -376,7 +380,7 @@ export default function MediaPlayer() {
               <div className="mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-faint)] mb-2">Skip</p>
                 <div className="flex gap-2">
-                  <button onClick={skipPrev} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs border border-[var(--color-border)] text-[var(--color-text-sub)] hover:bg-[var(--color-bg-muted)] transition">
+                  <button onClick={handleSkipPrev} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs border border-[var(--color-border)] text-[var(--color-text-sub)] hover:bg-[var(--color-bg-muted)] transition">
                     <SkipBack className="w-3.5 h-3.5" />Prev
                   </button>
                   <button onClick={skipNext} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs border border-[var(--color-border)] text-[var(--color-text-sub)] hover:bg-[var(--color-bg-muted)] transition">

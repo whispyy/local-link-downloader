@@ -336,7 +336,7 @@ export default function BrowsePage({ token, onUnauthorized, authEnabled }: Brows
       url,
       mediaType: meta.mediaType as 'audio' | 'video',
     };
-  }, [offline]);
+  }, [offline.getOfflineUrl]);
 
   const resetSelection = useCallback(() => {
     setSelectedFiles(new Set());
