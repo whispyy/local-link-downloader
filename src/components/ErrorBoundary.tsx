@@ -2,6 +2,7 @@ import { Component, type ReactNode, type ErrorInfo } from 'react';
 
 interface Props {
   children: ReactNode;
+  inline?: boolean;
 }
 
 interface State {
@@ -23,6 +24,29 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error, errorInfo } = this.state;
     if (!error) return this.props.children;
+
+    if (this.props.inline) {
+      return (
+        <div style={{ padding: 24, fontFamily: 'monospace', color: '#e2e8f0' }}>
+          <p style={{ color: '#f87171', fontWeight: 600, marginBottom: 8 }}>Page error</p>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 12, color: '#fbbf24', marginBottom: 16 }}>
+            {error.toString()}
+          </pre>
+          <button
+            onClick={() => this.setState({ error: null, errorInfo: null })}
+            style={{ padding: '6px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, marginRight: 8 }}
+          >
+            Try again
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ padding: '6px 16px', backgroundColor: '#334155', color: '#e2e8f0', border: '1px solid #475569', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
 
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#e2e8f0', padding: 24, fontFamily: 'monospace' }}>

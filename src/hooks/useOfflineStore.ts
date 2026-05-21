@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+const MAX_BLOB_CACHE = 10;
+
 const DB_NAME = 'offline-media';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
@@ -173,13 +175,26 @@ export function useOfflineStore() {
 
   const getOfflineUrl = useCallback(async (folderKey: string, subpath: string, filename: string): Promise<string | null> => {
     const key = buildKey(folderKey, subpath, filename);
-    // Return cached blob URL if available
-    const cached = blobUrlCache.current.get(key);
-    if (cached) return cached;
+    const cache = blobUrlCache.current;
+    // LRU: move hit to most-recent position
+    const cached = cache.get(key);
+    if (cached) {
+      cache.delete(key);
+      cache.set(key, cached);
+      return cached;
+    }
     const blob = await getBlob(key);
     if (!blob) return null;
     const url = URL.createObjectURL(blob);
-    blobUrlCache.current.set(key, url);
+    // Evict least-recently-used entry if at capacity
+    if (cache.size >= MAX_BLOB_CACHE) {
+      const lruKey = cache.keys().next().value as string | undefined;
+      if (lruKey !== undefined) {
+        URL.revokeObjectURL(cache.get(lruKey)!);
+        cache.delete(lruKey);
+      }
+    }
+    cache.set(key, url);
     return url;
   }, []);
 

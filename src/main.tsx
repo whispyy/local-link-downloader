@@ -106,7 +106,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <MediaPlayerProvider>
-        <Root />
+        <ErrorBoundary inline>
+          <Root />
+        </ErrorBoundary>
         <MediaPlayer />
       </MediaPlayerProvider>
     </ErrorBoundary>

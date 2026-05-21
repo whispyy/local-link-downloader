@@ -5,6 +5,7 @@ import {
   Maximize2, X, Film,
 } from 'lucide-react';
 import { useMediaPlayer } from '../../hooks/useMediaPlayer';
+import { useOutsideClick } from '../../hooks/useOutsideClick';
 import QueuePanel from './QueuePanel';
 
 function formatTime(s: number): string {
@@ -28,6 +29,8 @@ export default function MediaPlayer() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
+  const speedRef = useRef<HTMLDivElement>(null);
+  const mobileSettingsRef = useRef<HTMLDivElement>(null);
 
   // currentTime and duration are local — keeping them out of global context
   // prevents all useMediaPlayer() consumers from re-rendering on every timeupdate (~4×/sec)
@@ -35,6 +38,9 @@ export default function MediaPlayer() {
   const [duration, setDuration] = useState(0);
   const [isSpeedOpen, setIsSpeedOpen] = useState(false);
   const [isMobileSettingsOpen, setIsMobileSettingsOpen] = useState(false);
+
+  useOutsideClick(speedRef, () => setIsSpeedOpen(false), isSpeedOpen);
+  useOutsideClick(mobileSettingsRef, () => setIsMobileSettingsOpen(false), isMobileSettingsOpen);
   const [isVideoVisible, setIsVideoVisible] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [dragTime, setDragTime] = useState(0);
@@ -338,7 +344,7 @@ export default function MediaPlayer() {
         </div>
 
         {/* Speed — desktop */}
-        <div className="relative hidden sm:block shrink-0">
+        <div ref={speedRef} className="relative hidden sm:block shrink-0">
           <button
             onClick={() => setIsSpeedOpen(v => !v)}
             className="flex items-center justify-center w-8 h-8 rounded-full text-[var(--color-text-faint)] hover:text-[var(--color-text-dim)] hover:bg-[var(--color-bg-muted)] transition"
@@ -362,7 +368,7 @@ export default function MediaPlayer() {
         </div>
 
         {/* Mobile settings */}
-        <div className="relative sm:hidden shrink-0">
+        <div ref={mobileSettingsRef} className="relative sm:hidden shrink-0">
           <button
             onClick={() => setIsMobileSettingsOpen(v => !v)}
             className="flex items-center justify-center w-8 h-8 rounded-full text-[var(--color-text-faint)] hover:text-[var(--color-text-dim)] hover:bg-[var(--color-bg-muted)] transition"

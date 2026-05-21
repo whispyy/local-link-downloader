@@ -70,6 +70,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const prevJobStatusRef = useRef<string | null>(null);
+  const pollingRef = useRef(false);
 
   const authHeaders = useAuthHeaders(token);
 
@@ -102,6 +103,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   };
 
   const pollStatus = async (jobId: string) => {
+    if (pollingRef.current) return;
+    pollingRef.current = true;
     try {
       const response = await fetch(`/api/status/${jobId}`, { headers: authHeaders });
       if (response.status === 401) { onUnauthorized(); return; }
@@ -117,6 +120,8 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       setCurrentJob(data);
     } catch (error) {
       console.error('Failed to poll status:', error);
+    } finally {
+      pollingRef.current = false;
     }
   };
 
