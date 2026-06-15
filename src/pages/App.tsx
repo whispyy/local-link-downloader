@@ -67,6 +67,11 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
   // Shared state
   const [folderKey, setFolderKey] = useState('');
   const [currentJob, setCurrentJob] = useState<DownloadJob | null>(null);
+
+  const setFolderKeyPersisted = (key: string) => {
+    setFolderKey(key);
+    localStorage.setItem('lastFolderKey', key);
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const prevJobStatusRef = useRef<string | null>(null);
@@ -95,7 +100,10 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
       const data: Config = await response.json();
       setConfig(data);
       setConfigError(null);
-      if (data.folders.length > 0) setFolderKey(data.folders[0]);
+      if (data.folders.length > 0) {
+        const saved = localStorage.getItem('lastFolderKey');
+        setFolderKey(saved && data.folders.includes(saved) ? saved : data.folders[0]);
+      }
     } catch (error) {
       console.error('Failed to fetch config:', error);
       setConfigError('Could not load configuration. Is the server running?');
@@ -465,7 +473,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 />
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKeyPersisted} freeSpace={config.freeSpace} />
 
               <div>
                 <label htmlFor="filename" className="block text-sm font-medium text-th-text-sub mb-2">
@@ -541,7 +549,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 <p className="text-sm text-red-600 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{uploadError}</p>
               )}
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKeyPersisted} freeSpace={config.freeSpace} />
 
               <div>
                 <label htmlFor="upload-filename" className="block text-sm font-medium text-th-text-sub mb-2">
@@ -649,7 +657,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 </div>
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKeyPersisted} freeSpace={config.freeSpace} />
 
               <button
                 type="submit"
@@ -707,7 +715,7 @@ function App({ token, onUnauthorized, authEnabled }: AppProps) {
                 </div>
               </div>
 
-              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKey} freeSpace={config.freeSpace} />
+              <FolderSelect folders={config.folders} value={folderKey} onChange={setFolderKeyPersisted} freeSpace={config.freeSpace} />
 
               <button
                 type="submit"
